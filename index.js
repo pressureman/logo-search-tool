@@ -53,6 +53,7 @@ ${logoList}
   "action": "request|confirm|cancel|select|offTopic",
   "logoId": "",
   "selectedId": "",
+  "candidates": [],
   "format": "svg|png",
   "size": 512,
   "color": "#RRGGBB或null",
@@ -74,12 +75,12 @@ ${logoList}
   · action=cancel：一句轻松随意的告别，如"好嘞，有需要再来找我~"
   · action=request 且存在问题时（logo不支持改色、logo不存在、颜色有歧义、有多个版本可选等）：
     用自然口语说明情况，告知能提供什么，询问是否需要或请用户进一步确认；
-    如果有多个候选版本，在 reply 里列出（如"找到两个版本：\n1. 3chat-symbol\n2. 3chat-symbol-circle\n你要哪个？"）
+    如果有多个候选版本，在 reply 里列出供选择，同时把候选 logoId 填入 candidates 数组
 
 - 其他注意：
   · 颜色必须是合法3位或6位十六进制，如果用户给的颜色格式明显不对（位数不对等），在 reply 里友好提醒
   · logo不支持改色但用户要求改色时，reply 里说明不支持、提供原版选项
-  · 如果有多个候选版本，logoId 留空，reply 列出选项
+  · 如果有多个候选版本，logoId 留空，candidates 填入所有候选 logoId，reply 列出选项
   · format 默认 png，size 默认 512`,
     }],
   });
@@ -187,9 +188,10 @@ app.post('/webhook', async (req, res) => {
     // 构造上下文描述，传给 AI
     let context = null;
     if (state?.type === 'confirm') {
-      context = `机器人刚才告知用户当前请求有问题（如logo不支持改色等），等待用户确认是否需要原版。`;
+      context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），并询问是否需要原版，等待用户确认（是/否）。`;
     } else if (state?.type === 'select') {
-      context = `机器人列出了多个logo版本供用户选择：${state.candidates.join('、')}，等待用户选择。`;
+      const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
+      context = `机器人列出了多个logo版本：${list}，等待用户选择其中一个（用户说的"第一个"即 ${state.candidates[0]}，"第二个"即 ${state.candidates[1] ?? ''}）。`;
     }
 
     const intent = await parseIntent(userText, context);
@@ -220,12 +222,9 @@ app.post('/webhook', async (req, res) => {
 
     // action === 'request'
     if (reply) {
-      // AI 发现问题或需要选择，先回复用户
-      const type = intent.logoId ? 'confirm' : 'select';
-      const candidates = type === 'select'
-        ? manifest.logos.map(l => l.id).filter(id => reply.includes(id))
-        : null;
-      pending.set(chatId, { type, intent, candidates });
+      const hasCandidates = intent.candidates?.length > 1;
+      const type = hasCandidates ? 'select' : 'confirm';
+      pending.set(chatId, { type, intent, candidates: intent.candidates ?? [] });
       await replyText(chatId, reply);
       return;
     }
