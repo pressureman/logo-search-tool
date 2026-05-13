@@ -2,6 +2,7 @@ const express = require('express');
 const OpenAI = require('openai');
 const lark = require('@larksuiteoapi/node-sdk');
 const { Resvg } = require('@resvg/resvg-js');
+const sharp = require('sharp');
 const fs = require('fs');
 
 const app = express();
@@ -74,7 +75,7 @@ ${logoList}${aliasNote}
   "logoId": "",
   "selectedId": "",
   "candidates": [],
-  "format": "svg|png",
+  "format": "svg|png|jpg|webp",
   "size": 512,
   "color": "#RRGGBB或null",
   "iconColor": "#RRGGBB或null",
@@ -91,7 +92,7 @@ ${logoList}${aliasNote}
   · offTopic：与logo无关的闲聊
 
 【系统能力边界 - 严格遵守】
-支持的格式：SVG、PNG。不支持：PDF、JPG、JPEG、WEBP、GIF 及其他格式。
+支持的格式：SVG、PNG、JPG、WEBP。不支持：PDF、GIF 及其他格式。
 只支持单色替换（一个纯色 hex 值），不支持：渐变、多色、透明度、滤镜、阴影等效果。
 用户请求不支持的格式或效果时，必须在 reply 里如实说明，告知支持什么，询问是否改用支持的方案。
 绝对不能在 reply 里承诺会实现不支持的格式或效果。
@@ -162,7 +163,19 @@ async function processLogo(intent) {
     fitTo: { mode: 'width', value: intent.size || 512 },
     background: intent.bgColor || undefined,
   });
-  return { buffer: resvg.render().asPng(), ext: 'png' };
+  const pngBuffer = resvg.render().asPng();
+
+  const fmt = intent.format?.toLowerCase();
+  if (fmt === 'jpg' || fmt === 'jpeg') {
+    const buffer = await sharp(pngBuffer).jpeg({ quality: 95 }).toBuffer();
+    return { buffer, ext: 'jpg' };
+  }
+  if (fmt === 'webp') {
+    const buffer = await sharp(pngBuffer).webp({ quality: 95 }).toBuffer();
+    return { buffer, ext: 'webp' };
+  }
+
+  return { buffer: pngBuffer, ext: 'png' };
 }
 
 async function sendLogoToFeishu(chatId, fileResult, logoId) {
