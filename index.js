@@ -138,12 +138,18 @@ async function replyText(chatId, text) {
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
+  console.log('收到请求:', JSON.stringify(body));
+
   if (body.type === 'url_verification') {
     return res.json({ challenge: body.challenge });
   }
 
   const event = body?.event;
+  console.log('event:', JSON.stringify(event));
+  console.log('message_type:', event?.message?.message_type);
+
   if (!event || event.message?.message_type !== 'text') {
+    console.log('消息类型不匹配，跳过');
     return res.sendStatus(200);
   }
 
