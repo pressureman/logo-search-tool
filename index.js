@@ -1,7 +1,7 @@
 const express = require('express');
 const OpenAI = require('openai');
 const lark = require('@larksuiteoapi/node-sdk');
-const sharp = require('sharp');
+const { Resvg } = require('@resvg/resvg-js');
 const fs = require('fs');
 
 const app = express();
@@ -36,7 +36,7 @@ async function parseIntent(userMessage) {
 可用logo列表：
 ${logoList}
 
-请返回JSON，格式：{"logoId":"","format":"svg|png|pdf","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false}
+请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false}
 - format 默认 png，size 默认 512
 - color：单色logo的颜色；对于圆形logo，是圆的背景色
 - iconColor：仅对「圆色+图标色可分开控制」的logo有效，表示圆内图标的颜色
@@ -91,18 +91,11 @@ async function processLogo(intent) {
     return { buffer: Buffer.from(svgContent), ext: 'svg', mime: 'image/svg+xml' };
   }
 
-  let sharpInst = sharp(Buffer.from(svgContent)).resize(intent.size, intent.size, { fit: 'contain' });
-
-  if (intent.bgColor) {
-    sharpInst = sharpInst.flatten({ background: intent.bgColor });
-  }
-
-  if (intent.format === 'pdf') {
-    const buffer = await sharpInst.pdf().toBuffer();
-    return { buffer, ext: 'pdf', mime: 'application/pdf' };
-  }
-
-  const buffer = await sharpInst.png().toBuffer();
+  const resvg = new Resvg(svgContent, {
+    fitTo: { mode: 'width', value: intent.size },
+    background: intent.bgColor || undefined,
+  });
+  const buffer = resvg.render().asPng();
   return { buffer, ext: 'png', mime: 'image/png' };
 }
 
