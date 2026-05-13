@@ -32,7 +32,12 @@ function resolveSelection(userText, candidates) {
 
 async function parseIntent(userMessage) {
   const logoList = manifest.logos
-    .map(l => `${l.id}（别名：${l.aliases.join('/')}）`)
+    .map(l => {
+      const colorNote = l.colorParts
+        ? '支持分别指定圆色和图标色'
+        : l.colorEditable ? '支持改色' : '不支持改色（固定多色）';
+      return `${l.id}（别名：${l.aliases.join('/')}，${colorNote}）`;
+    })
     .join('\n');
 
   const res = await deepseek.chat.completions.create({
@@ -45,14 +50,15 @@ async function parseIntent(userMessage) {
 可用logo列表：
 ${logoList}
 
-请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[],"offTopic":false,"reply":""}
+请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[],"offTopic":false,"blocked":false,"reply":""}
 - format 默认 png，size 默认 512
 - color：单色logo的颜色；对于圆形logo，是圆的背景色
-- iconColor：仅对「圆色+图标色可分开控制」的logo有效，表示圆内图标的颜色
+- iconColor：仅对「支持分别指定圆色和图标色」的logo有效，表示圆内图标的颜色
 - bgColor：画布背景色（导出图片时的底色），没提就填 null
 - notFound：能理解用户在找logo但库里没有时填 true
-- ambiguous：仅当用户说的品牌/名称同时对应多个版本（如"3chat"同时匹配3chat-symbol和3chat-symbol-circle）时填 true，candidates 只列这几个相关候选，logoId 留空。如果能明确判断用户要哪一个，就直接填 logoId，不要触发 ambiguous
-- offTopic：消息与logo完全无关时填 true，同时在 reply 里写一句自然友好的中文回复（就像普通聊天一样针对用户说的内容回应，结尾可以加一句"有需要logo素材随时告诉我"）
+- ambiguous：仅当用户说的品牌/名称同时对应多个版本时填 true，candidates 只列相关候选，logoId 留空；能明确判断则直接填 logoId
+- offTopic：消息与logo完全无关时填 true，reply 写一句自然友好的中文回复，结尾加「有需要logo素材随时告诉我」
+- blocked：用户的要求与logo能力冲突（如对「不支持改色」的logo要求改色）时填 true，reply 用自然语气说明限制、告知当前能提供什么（格式/尺寸），并询问是否需要；color/iconColor 仍然填 null
 只返回JSON，不要其他文字。`,
     }],
   });
@@ -88,22 +94,6 @@ function replaceSvgColor(svgContent, intent, logo) {
   return result;
 }
 
-function validateIntent(intent) {
-  const logo = manifest.logos.find(l => l.id === intent.logoId);
-  if (!logo) return null;
-
-  const issues = [];
-
-  if ((intent.color || intent.iconColor) && !logo.colorEditable) {
-    const colorDesc = logo.colorNodes?.[0] === 'colorful' ? '多色版本' : '固定颜色';
-    issues.push(`这个 logo 是${colorDesc}，不支持改色`);
-  }
-
-  if (issues.length === 0) return null;
-
-  const canProvide = [`格式：${intent.format?.toUpperCase() || 'PNG'}`, `尺寸：${intent.size || 512}px`].join('，');
-  return `${issues.join('；')}。我现在能给你的是原版（${canProvide}），需要吗？`;
-}
 
 async function processLogo(intent) {
   const logo = manifest.logos.find(l => l.id === intent.logoId);
@@ -261,10 +251,9 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    const warning = validateIntent(intent);
-    if (warning) {
+    if (intent.blocked) {
       pendingSelections.set(chatId, { candidates: null, intent, awaitingConfirm: true });
-      await replyText(chatId, warning);
+      await replyText(chatId, intent.reply);
       return;
     }
 
