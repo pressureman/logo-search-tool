@@ -112,27 +112,43 @@ async function processLogo(intent) {
   return { buffer, ext: 'png', mime: 'image/png' };
 }
 
-async function sendLogoToFeishu(chatId, fileResult) {
-  const uploadRes = await larkClient.im.image.create({
-    data: {
-      image_type: 'message',
-      image: fileResult.buffer,
-    },
-  });
-
-  console.log('uploadRes:', JSON.stringify(uploadRes));
-
-  const imageKey = uploadRes?.data?.image_key ?? uploadRes?.image_key;
-  if (!imageKey) throw new Error(`图片上传失败，响应：${JSON.stringify(uploadRes)}`);
-
-  await larkClient.im.message.create({
-    params: { receive_id_type: 'chat_id' },
-    data: {
-      receive_id: chatId,
-      msg_type: 'image',
-      content: JSON.stringify({ image_key: imageKey }),
-    },
-  });
+async function sendLogoToFeishu(chatId, fileResult, logoId) {
+  if (fileResult.ext === 'svg') {
+    const uploadRes = await larkClient.im.file.create({
+      data: {
+        file_type: 'stream',
+        file_name: `${logoId}.svg`,
+        file: fileResult.buffer,
+      },
+    });
+    const fileKey = uploadRes?.data?.file_key ?? uploadRes?.file_key;
+    if (!fileKey) throw new Error(`文件上传失败，响应：${JSON.stringify(uploadRes)}`);
+    await larkClient.im.message.create({
+      params: { receive_id_type: 'chat_id' },
+      data: {
+        receive_id: chatId,
+        msg_type: 'file',
+        content: JSON.stringify({ file_key: fileKey }),
+      },
+    });
+  } else {
+    const uploadRes = await larkClient.im.image.create({
+      data: {
+        image_type: 'message',
+        image: fileResult.buffer,
+      },
+    });
+    const imageKey = uploadRes?.data?.image_key ?? uploadRes?.image_key;
+    if (!imageKey) throw new Error(`图片上传失败，响应：${JSON.stringify(uploadRes)}`);
+    await larkClient.im.message.create({
+      params: { receive_id_type: 'chat_id' },
+      data: {
+        receive_id: chatId,
+        msg_type: 'image',
+        content: JSON.stringify({ image_key: imageKey }),
+      },
+    });
+  }
 }
 
 async function replyText(chatId, text) {
@@ -181,7 +197,7 @@ app.post('/webhook', async (req, res) => {
       pendingSelections.delete(chatId);
       const fileResult = await processLogo({ ...pending.intent, logoId: selected });
       if (!fileResult) throw new Error('logo 文件不存在');
-      await sendLogoToFeishu(chatId, fileResult);
+      await sendLogoToFeishu(chatId, fileResult, selected);
       return;
     }
 
@@ -202,7 +218,7 @@ app.post('/webhook', async (req, res) => {
     const fileResult = await processLogo(intent);
     if (!fileResult) throw new Error('logo 文件不存在');
 
-    await sendLogoToFeishu(chatId, fileResult);
+    await sendLogoToFeishu(chatId, fileResult, intent.logoId);
   } catch (err) {
     console.error(err);
     await replyText(chatId, '处理出错了，请稍后再试。');
