@@ -91,6 +91,23 @@ function replaceSvgColor(svgContent, intent, logo) {
   return result;
 }
 
+function validateIntent(intent) {
+  const logo = manifest.logos.find(l => l.id === intent.logoId);
+  if (!logo) return null;
+
+  const issues = [];
+
+  if ((intent.color || intent.iconColor) && !logo.colorEditable) {
+    const colorDesc = logo.colorNodes?.[0] === 'colorful' ? '多色版本' : '固定颜色';
+    issues.push(`这个 logo 是${colorDesc}，不支持改色`);
+  }
+
+  if (issues.length === 0) return null;
+
+  const canProvide = [`格式：${intent.format?.toUpperCase() || 'PNG'}`, `尺寸：${intent.size || 512}px`].join('，');
+  return `${issues.join('；')}。我现在能给你的是原版（${canProvide}），需要吗？`;
+}
+
 async function processLogo(intent) {
   const logo = manifest.logos.find(l => l.id === intent.logoId);
   if (!logo) return null;
@@ -197,6 +214,24 @@ app.post('/webhook', async (req, res) => {
         return;
       }
       const pending = pendingSelections.get(chatId);
+
+      // 处理"属性不支持"的确认等待
+      if (pending.awaitingConfirm) {
+        const confirmKeywords = ['要', '好', '是', '需要', 'ok', 'OK', '发吧', '可以'];
+        if (confirmKeywords.some(k => userText.includes(k))) {
+          pendingSelections.delete(chatId);
+          const stripped = { ...pending.intent, color: null, iconColor: null };
+          const fileResult = await processLogo(stripped);
+          if (!fileResult) throw new Error('logo 文件不存在');
+          await sendLogoToFeishu(chatId, fileResult, stripped.logoId);
+        } else {
+          pendingSelections.delete(chatId);
+          await replyText(chatId, '好的，有需要随时告诉我 😊');
+        }
+        return;
+      }
+
+      // 处理版本选择
       const selected = resolveSelection(userText, pending.candidates);
       if (!selected) {
         const options = pending.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
@@ -226,6 +261,13 @@ app.post('/webhook', async (req, res) => {
       pendingSelections.set(chatId, { candidates: intent.candidates, intent });
       const options = intent.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
       await replyText(chatId, `找到多个版本，请选择：\n${options}`);
+      return;
+    }
+
+    const warning = validateIntent(intent);
+    if (warning) {
+      pendingSelections.set(chatId, { candidates: null, intent, awaitingConfirm: true });
+      await replyText(chatId, warning);
       return;
     }
 
