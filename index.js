@@ -32,10 +32,7 @@ function resolveSelection(userText, candidates) {
 
 async function parseIntent(userMessage) {
   const logoList = manifest.logos
-    .map(l => {
-      const parts = l.colorParts ? `圆色+图标色可分开控制` : `可改色：${l.colorEditable}`;
-      return `${l.id}（别名：${l.aliases.join('/')}，${parts}）`;
-    })
+    .map(l => `${l.id}（别名：${l.aliases.join('/')}）`)
     .join('\n');
 
   const res = await deepseek.chat.completions.create({
