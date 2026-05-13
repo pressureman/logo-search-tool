@@ -1,32 +1,555 @@
 {
   "logos": [
     {
-      "id": "apple-symbol",
+      "id": "3chat",
+      "path": "新核云NewCoreTech/3chat.svg",
+      "aliases": ["3Chat", "3chat", "三chat", "3Chat图标", "3chat图标"],
+      "colorEditable": true,
+      "colorNodes": ["black"],
+      "tags": ["新核云"]
+    },
+    {
+      "id": "3chat-circle",
+      "path": "新核云NewCoreTech/3chat-circle.svg",
+      "aliases": ["3Chat", "3chat", "三chat", "3Chat圆形", "3chat圆", "3chat-circle"],
+      "colorEditable": true,
+      "colorParts": { "circle": "black", "icon": "white" },
+      "tags": ["新核云"]
+    },
+    {
+      "id": "3chat-horizontal",
+      "path": "新核云NewCoreTech/3chat-horizontal.svg",
+      "aliases": ["3Chat", "3chat", "三chat", "3Chat横版", "3chat横版"],
+      "colorEditable": true,
+      "colorNodes": ["black"],
+      "tags": ["新核云"]
+    },
+    {
+      "id": "newcore",
+      "path": "新核云NewCoreTech/newcore.svg",
+      "aliases": ["新核云", "NewCoreTech", "newcore", "新核云图标"],
+      "colorEditable": false,
+      "tags": ["新核云"]
+    },
+    {
+      "id": "newcore-horizontal",
+      "path": "新核云NewCoreTech/newcore-horizontal.svg",
+      "aliases": ["新核云", "NewCoreTech", "newcore", "新核云横版", "newcore横版"],
+      "colorEditable": false,
+      "tags": ["新核云"]
+    },
+    {
+      "id": "wailkingpad",
+      "path": "客户/wailkingpad.svg",
+      "aliases": ["Wailkingpad", "wailkingpad", "行走板"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "qianliema",
+      "path": "客户/千里马.svg",
+      "aliases": ["千里马", "qianliema"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "yixinli",
+      "path": "客户/壹心理.svg",
+      "aliases": ["壹心理", "yixinli"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "yuxiaoer",
+      "path": "客户/寓小二.svg",
+      "aliases": ["寓小二", "yuxiaoer"],
+      "colorEditable": true,
+      "colorNodes": ["#F5403F"],
+      "tags": ["客户"]
+    },
+    {
+      "id": "kangenbei",
+      "path": "客户/康恩贝.svg",
+      "aliases": ["康恩贝", "kangenbei"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "huirong",
+      "path": "客户/惠融科技.svg",
+      "aliases": ["惠融科技", "惠融", "huirong"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "huida",
+      "path": "客户/惠达科技.svg",
+      "aliases": ["惠达科技", "惠达", "huida"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "1688",
+      "path": "第三方/1688.svg",
+      "aliases": ["1688", "阿里1688"],
+      "colorEditable": true,
+      "colorNodes": ["#FF5B00"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "microsoft",
+      "path": "第三方/Microsoft.svg",
+      "aliases": ["Microsoft", "微软", "microsoft"],
+      "colorEditable": false,
+      "tags": ["科技", "第三方"]
+    },
+    {
+      "id": "microsoft-horizontal",
+      "path": "第三方/Microsoft-horizontal.svg",
+      "aliases": ["Microsoft", "微软", "microsoft", "Microsoft横版", "微软横版"],
+      "colorEditable": false,
+      "tags": ["科技", "第三方"]
+    },
+    {
+      "id": "microsoft-outlook",
+      "path": "第三方/MicrosoftOutlook.svg",
+      "aliases": ["Outlook", "outlook", "MicrosoftOutlook", "微软Outlook"],
+      "colorEditable": false,
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "wchat-customer",
+      "path": "第三方/Wchat customer.svg",
+      "aliases": ["微信客服", "Wchat客服", "wechat客服", "企业微信客服"],
+      "colorEditable": true,
+      "colorNodes": ["#55B369"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "alipay",
+      "path": "第三方/alipay.svg",
+      "aliases": ["支付宝", "alipay", "Alipay"],
+      "colorEditable": false,
+      "tags": ["支付", "第三方"]
+    },
+    {
+      "id": "amazon",
+      "path": "第三方/amazon.svg",
+      "aliases": ["Amazon", "亚马逊", "amazon"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "amazon-horizontal",
+      "path": "第三方/amazon-horizontal.svg",
+      "aliases": ["Amazon", "亚马逊", "amazon", "Amazon横版", "亚马逊横版"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "apple",
+      "path": "第三方/apple.svg",
       "aliases": ["苹果", "Apple", "apple"],
       "colorEditable": true,
       "colorNodes": ["black"],
-      "tags": ["科技"]
+      "tags": ["科技", "第三方"]
     },
     {
-      "id": "google-symbol",
-      "aliases": ["谷歌", "Google", "google"],
+      "id": "azada-horizontal",
+      "path": "第三方/azada-horizontal.svg",
+      "aliases": ["Azada", "azada"],
       "colorEditable": false,
-      "colorNodes": ["colorful"],
-      "tags": ["科技"]
+      "tags": ["第三方"]
     },
     {
-      "id": "3chat-symbol",
-      "aliases": ["3Chat", "3chat", "三chat"],
+      "id": "corporate-transfer",
+      "path": "第三方/corporate transfer.svg",
+      "aliases": ["企业转账", "corporate transfer", "对公转账"],
+      "colorEditable": false,
+      "tags": ["支付", "第三方"]
+    },
+    {
+      "id": "dingtalk",
+      "path": "第三方/dingtalk.svg",
+      "aliases": ["钉钉", "DingTalk", "dingtalk"],
+      "colorEditable": true,
+      "colorNodes": ["#59ADF8"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "discord",
+      "path": "第三方/discord.svg",
+      "aliases": ["Discord", "discord"],
+      "colorEditable": true,
+      "colorNodes": ["#5765F2"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "dynamics365",
+      "path": "第三方/dynamics365.svg",
+      "aliases": ["Dynamics365", "dynamics365", "dynamics 365", "微软Dynamics"],
+      "colorEditable": true,
+      "colorNodes": ["#0B53CE"],
+      "tags": ["第三方"]
+    },
+    {
+      "id": "facebook",
+      "path": "第三方/facebook.svg",
+      "aliases": ["Facebook", "facebook", "脸书", "FB"],
+      "colorEditable": true,
+      "colorNodes": ["#0866FF"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "facebook-horizontal",
+      "path": "第三方/facebook-horizontal.svg",
+      "aliases": ["Facebook", "facebook", "脸书", "FB", "Facebook横版"],
+      "colorEditable": true,
+      "colorNodes": ["#0766FF"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "feishu",
+      "path": "第三方/feishu.svg",
+      "aliases": ["飞书", "Feishu", "feishu", "Lark"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "feishu-email",
+      "path": "第三方/feishu email.svg",
+      "aliases": ["飞书邮件", "飞书邮箱", "feishu email", "feishu邮件"],
+      "colorEditable": false,
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "fenxiangxiaoke",
+      "path": "第三方/fenxiangxiaoke.svg",
+      "aliases": ["分享小客", "fenxiangxiaoke"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "gmail",
+      "path": "第三方/gmail.svg",
+      "aliases": ["Gmail", "gmail", "谷歌邮件"],
+      "colorEditable": false,
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "google",
+      "path": "第三方/google.svg",
+      "aliases": ["Google", "谷歌", "google"],
+      "colorEditable": false,
+      "tags": ["科技", "第三方"]
+    },
+    {
+      "id": "hubspot-horizontal",
+      "path": "第三方/hubspot-horizontal.svg",
+      "aliases": ["HubSpot", "hubspot", "Hubspot"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "instagram",
+      "path": "第三方/instagram.svg",
+      "aliases": ["Instagram", "instagram", "ins", "IG"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "instagram-horizontal",
+      "path": "第三方/instagram-horizontal.svg",
+      "aliases": ["Instagram", "instagram", "ins", "IG", "Instagram横版"],
       "colorEditable": true,
       "colorNodes": ["black"],
-      "tags": ["社交"]
+      "tags": ["社交", "第三方"]
     },
     {
-      "id": "3chat-symbol-circle",
-      "aliases": ["3Chat", "3chat", "三chat", "3Chat圆形", "3chat-circle", "3chat圆"],
+      "id": "jingdong",
+      "path": "第三方/jingdong.svg",
+      "aliases": ["京东", "JD", "jingdong", "京东图标"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "jingdong-horizontal",
+      "path": "第三方/jingdong-horizontal.svg",
+      "aliases": ["京东", "JD", "jingdong", "京东横版"],
       "colorEditable": true,
-      "colorParts": { "circle": "black", "icon": "white" },
-      "tags": ["社交"]
+      "colorNodes": ["#C81623"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "line",
+      "path": "第三方/line.svg",
+      "aliases": ["Line", "line", "LINE"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "mail-ios",
+      "path": "第三方/mail ios.svg",
+      "aliases": ["苹果邮件", "Mail", "mail", "iOS邮件", "mail ios"],
+      "colorEditable": false,
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "meituan",
+      "path": "第三方/meituan.svg",
+      "aliases": ["美团", "Meituan", "meituan"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "messenger",
+      "path": "第三方/messenger.svg",
+      "aliases": ["Messenger", "messenger", "Facebook Messenger"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "netease-mail",
+      "path": "第三方/netease eail.svg",
+      "aliases": ["网易邮件", "网易邮箱", "163邮箱", "网易mail"],
+      "colorEditable": true,
+      "colorNodes": ["#FD1E1E"],
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "pinduoduo",
+      "path": "第三方/pinduoduo.svg",
+      "aliases": ["拼多多", "PDD", "pinduoduo"],
+      "colorEditable": true,
+      "colorNodes": ["#D81E06"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "qq-mail",
+      "path": "第三方/qq mail.svg",
+      "aliases": ["QQ邮件", "QQ邮箱", "qq mail", "腾讯邮箱"],
+      "colorEditable": false,
+      "tags": ["邮件", "第三方"]
+    },
+    {
+      "id": "salesforce",
+      "path": "第三方/salesforce.svg",
+      "aliases": ["Salesforce", "salesforce"],
+      "colorEditable": true,
+      "colorNodes": ["#00A1E0"],
+      "tags": ["第三方"]
+    },
+    {
+      "id": "sap",
+      "path": "第三方/sap.svg",
+      "aliases": ["SAP", "sap"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "shopee",
+      "path": "第三方/shopee.svg",
+      "aliases": ["Shopee", "shopee", "虾皮"],
+      "colorEditable": true,
+      "colorNodes": ["#EA501F"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "shopee-horizontal",
+      "path": "第三方/shopee-horizontal.svg",
+      "aliases": ["Shopee", "shopee", "虾皮", "Shopee横版"],
+      "colorEditable": true,
+      "colorNodes": ["#EE4D2D"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "shopify",
+      "path": "第三方/shopify.svg",
+      "aliases": ["Shopify", "shopify"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "shopify-horizontal",
+      "path": "第三方/shopify-horizontal.svg",
+      "aliases": ["Shopify", "shopify", "Shopify横版"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "shopline",
+      "path": "第三方/shopline.svg",
+      "aliases": ["Shopline", "shopline"],
+      "colorEditable": true,
+      "colorNodes": ["#333F48"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "shopline-horizontal",
+      "path": "第三方/shopline-horizontal.svg",
+      "aliases": ["Shopline", "shopline", "Shopline横版"],
+      "colorEditable": true,
+      "colorNodes": ["#333F48"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "siemens-horizontal",
+      "path": "第三方/siemens-horizontal.svg",
+      "aliases": ["Siemens", "siemens", "西门子"],
+      "colorEditable": true,
+      "colorNodes": ["#00A0B0"],
+      "tags": ["第三方"]
+    },
+    {
+      "id": "stripe",
+      "path": "第三方/stripe.svg",
+      "aliases": ["Stripe", "stripe"],
+      "colorEditable": true,
+      "colorNodes": ["#5539FD"],
+      "tags": ["支付", "第三方"]
+    },
+    {
+      "id": "taobao",
+      "path": "第三方/taobao.svg",
+      "aliases": ["淘宝", "taobao", "Taobao"],
+      "colorEditable": true,
+      "colorNodes": ["#FE7500"],
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "telegram",
+      "path": "第三方/telegram.svg",
+      "aliases": ["Telegram", "telegram", "TG"],
+      "colorEditable": true,
+      "colorNodes": ["#1EAFE9"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "tiktok",
+      "path": "第三方/tiktok.svg",
+      "aliases": ["TikTok", "tiktok", "抖音国际版"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "tiktok-shop",
+      "path": "第三方/tiktok shop.svg",
+      "aliases": ["TikTok Shop", "tiktok shop", "TikTok小店"],
+      "colorEditable": true,
+      "colorNodes": ["#0050FF"],
+      "tags": ["电商", "社交", "第三方"]
+    },
+    {
+      "id": "wangyi-vertical",
+      "path": "第三方/wangyi-vertical.svg",
+      "aliases": ["网易", "wangyi", "Wangyi", "网易竖版"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "website",
+      "path": "第三方/website.svg",
+      "aliases": ["网站", "website", "官网", "Website"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "wechat-mini-program",
+      "path": "第三方/wechat mini Program.svg",
+      "aliases": ["微信小程序", "小程序", "wechat mini program", "小程序图标"],
+      "colorEditable": true,
+      "colorNodes": ["#5F5AAB"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "wechat-official-accounts",
+      "path": "第三方/wechat offical accounts.svg",
+      "aliases": ["微信公众号", "公众号", "wechat official accounts", "公众号图标"],
+      "colorEditable": true,
+      "colorNodes": ["#2C9A4B"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "wechat-store",
+      "path": "第三方/wechat store.svg",
+      "aliases": ["微信小店", "微信店铺", "wechat store"],
+      "colorEditable": true,
+      "colorNodes": ["#0AB8A6"],
+      "tags": ["电商", "社交", "第三方"]
+    },
+    {
+      "id": "wechat",
+      "path": "第三方/wechat.svg",
+      "aliases": ["微信", "WeChat", "wechat"],
+      "colorEditable": true,
+      "colorNodes": ["#34BD26"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "wecom",
+      "path": "第三方/wecom.svg",
+      "aliases": ["企业微信", "WeCom", "wecom", "企微"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "whatsapp",
+      "path": "第三方/whatsapp.svg",
+      "aliases": ["WhatsApp", "whatsapp", "wa"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "whatsapp-horizontal",
+      "path": "第三方/whatsapp-horizontal.svg",
+      "aliases": ["WhatsApp", "whatsapp", "wa", "WhatsApp横版"],
+      "colorEditable": false,
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "wordpress",
+      "path": "第三方/wordpress.svg",
+      "aliases": ["WordPress", "wordpress", "wp"],
+      "colorEditable": true,
+      "colorNodes": ["#061229"],
+      "tags": ["第三方"]
+    },
+    {
+      "id": "wordpress-horizontal",
+      "path": "第三方/wordpress-horizontal.svg",
+      "aliases": ["WordPress", "wordpress", "wp", "WordPress横版"],
+      "colorEditable": false,
+      "tags": ["第三方"]
+    },
+    {
+      "id": "xianyu",
+      "path": "第三方/xianyu.svg",
+      "aliases": ["闲鱼", "xianyu", "Xianyu"],
+      "colorEditable": false,
+      "tags": ["电商", "第三方"]
+    },
+    {
+      "id": "xiaohongshu",
+      "path": "第三方/xiaohongshu.svg",
+      "aliases": ["小红书", "xiaohongshu", "RED", "rednote"],
+      "colorEditable": true,
+      "colorNodes": ["#FF2444"],
+      "tags": ["社交", "第三方"]
+    },
+    {
+      "id": "zendesk-vertical",
+      "path": "第三方/zendesk-vertical.svg",
+      "aliases": ["Zendesk", "zendesk"],
+      "colorEditable": true,
+      "colorNodes": ["#03363D"],
+      "tags": ["第三方"]
+    },
+    {
+      "id": "zoho-horizontal",
+      "path": "第三方/zoho-horizontal.svg",
+      "aliases": ["Zoho", "zoho"],
+      "colorEditable": false,
+      "tags": ["第三方"]
     }
   ]
 }

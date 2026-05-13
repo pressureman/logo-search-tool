@@ -150,7 +150,7 @@ async function processLogo(intent) {
   if (intent.color && !HEX_RE.test(intent.color)) intent.color = null;
   if (intent.iconColor && !HEX_RE.test(intent.iconColor)) intent.iconColor = null;
 
-  let svgContent = fs.readFileSync(`./logos/${logo.id}.svg`, 'utf8');
+  let svgContent = fs.readFileSync(`./logos/${logo.path}`, 'utf8');
   if (intent.color || intent.iconColor) {
     svgContent = replaceSvgColor(svgContent, intent, logo);
   }
