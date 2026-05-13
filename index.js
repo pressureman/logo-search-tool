@@ -171,4 +171,6 @@ app.post('/webhook', async (req, res) => {
 
 app.get('/', (req, res) => res.sendStatus(200));
 
-app.listen(process.env.PORT || 3000, () => console.log('Logo Bot 启动'));
+const PORT = process.env.PORT || 3000;
+console.log('准备监听端口:', PORT);
+app.listen(PORT, '0.0.0.0', () => console.log(`Logo Bot 启动，端口 ${PORT}`));
