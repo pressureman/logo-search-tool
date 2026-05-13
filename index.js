@@ -18,6 +18,18 @@ const larkClient = new lark.Client({
 
 const manifest = JSON.parse(fs.readFileSync('./logos/manifest.json', 'utf8'));
 
+// chatId -> { candidates: string[], intent: object }
+const pendingSelections = new Map();
+
+function resolveSelection(userText, candidates) {
+  const t = userText.trim().toLowerCase();
+  const num = parseInt(t);
+  if (!isNaN(num) && num >= 1 && num <= candidates.length) return candidates[num - 1];
+  return candidates.find(id => id.toLowerCase() === t)
+      || candidates.find(id => id.toLowerCase().includes(t) || t.includes(id.toLowerCase()))
+      || null;
+}
+
 async function parseIntent(userMessage) {
   const logoList = manifest.logos
     .map(l => {
@@ -36,12 +48,13 @@ async function parseIntent(userMessage) {
 可用logo列表：
 ${logoList}
 
-请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false}
+请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[]}
 - format 默认 png，size 默认 512
 - color：单色logo的颜色；对于圆形logo，是圆的背景色
 - iconColor：仅对「圆色+图标色可分开控制」的logo有效，表示圆内图标的颜色
 - bgColor：画布背景色（导出图片时的底色），没提就填 null
-- notFound 如果找不到匹配logo就填 true
+- notFound：找不到任何匹配时填 true
+- ambiguous：用户意图模糊、有多个候选logo时填 true，candidates 列出所有候选 logoId，logoId 留空
 只返回JSON，不要其他文字。`,
     }],
   });
@@ -157,10 +170,32 @@ app.post('/webhook', async (req, res) => {
   const chatId = event.message.chat_id;
 
   try {
+    // 处理待确认的版本选择
+    if (pendingSelections.has(chatId)) {
+      const pending = pendingSelections.get(chatId);
+      const selected = resolveSelection(userText, pending.candidates);
+      if (!selected) {
+        await replyText(chatId, `未识别到有效选择，请回复序号（如"1"）或名称`);
+        return;
+      }
+      pendingSelections.delete(chatId);
+      const fileResult = await processLogo({ ...pending.intent, logoId: selected });
+      if (!fileResult) throw new Error('logo 文件不存在');
+      await sendLogoToFeishu(chatId, fileResult);
+      return;
+    }
+
     const intent = await parseIntent(userText);
 
     if (intent.notFound) {
       await replyText(chatId, '抱歉，没有找到对应的 logo，可以告诉我更多信息吗？');
+      return;
+    }
+
+    if (intent.ambiguous && intent.candidates?.length > 1) {
+      pendingSelections.set(chatId, { candidates: intent.candidates, intent });
+      const options = intent.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
+      await replyText(chatId, `找到多个版本，请选择：\n${options}`);
       return;
     }
 
