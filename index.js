@@ -18,19 +18,12 @@ const larkClient = new lark.Client({
 
 const manifest = JSON.parse(fs.readFileSync('./logos/manifest.json', 'utf8'));
 
-// chatId -> { candidates: string[], intent: object }
-const pendingSelections = new Map();
+// chatId -> { type: 'confirm'|'select', intent, candidates? }
+const pending = new Map();
 
-function resolveSelection(userText, candidates) {
-  const t = userText.trim().toLowerCase();
-  const num = parseInt(t);
-  if (!isNaN(num) && num >= 1 && num <= candidates.length) return candidates[num - 1];
-  return candidates.find(id => id.toLowerCase() === t)
-      || candidates.find(id => id.toLowerCase().includes(t) || t.includes(id.toLowerCase()))
-      || null;
-}
+const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
-async function parseIntent(userMessage) {
+async function parseIntent(userMessage, context = null) {
   const logoList = manifest.logos
     .map(l => {
       const colorNote = l.colorParts
@@ -40,26 +33,54 @@ async function parseIntent(userMessage) {
     })
     .join('\n');
 
+  const contextSection = context
+    ? `\n【当前对话状态】\n${context}\n用户的回复需要结合此状态理解。\n`
+    : '';
+
   const res = await deepseek.chat.completions.create({
     model: 'deepseek-chat',
-    max_tokens: 300,
+    max_tokens: 500,
     messages: [{
       role: 'user',
-      content: `你是一个logo助手。用户说：「${userMessage}」
+      content: `你是公司内部的logo素材助手，说话自然随意，像靠谱的同事。${contextSection}
+用户说：「${userMessage}」
 
 可用logo列表：
 ${logoList}
 
-请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[],"offTopic":false,"blocked":false,"reply":""}
-- format 默认 png，size 默认 512
-- color：单色logo的颜色；对于圆形logo，是圆的背景色
-- iconColor：仅对「支持分别指定圆色和图标色」的logo有效，表示圆内图标的颜色
-- bgColor：画布背景色（导出图片时的底色），没提就填 null
-- notFound：能理解用户在找logo但库里没有时填 true
-- ambiguous：仅当用户说的品牌/名称同时对应多个版本时填 true，candidates 只列相关候选，logoId 留空；能明确判断则直接填 logoId
-- offTopic：消息与logo完全无关时填 true，reply 写一句自然友好的中文回复，结尾加「有需要logo素材随时告诉我」
-- blocked：只要用户的消息中出现了颜色词（如"黑色"、"红色"、"#FF0000"等），且匹配到的logo标注为「不支持改色」，就必须将 blocked 设为 true——不能静默忽略颜色请求。reply 用自然口语说明该logo不支持改色，告知当前能提供的格式和尺寸，并询问用户是否需要原版。color/iconColor 填 null
-只返回JSON，不要其他文字。`,
+返回JSON，格式如下，只返回JSON不要其他文字：
+{
+  "action": "request|confirm|cancel|select|offTopic",
+  "logoId": "",
+  "selectedId": "",
+  "format": "svg|png",
+  "size": 512,
+  "color": "#RRGGBB或null",
+  "iconColor": "#RRGGBB或null",
+  "bgColor": "#RRGGBB或null",
+  "reply": ""
+}
+
+各字段说明：
+- action：
+  · request：用户在请求logo（新请求或重新请求）
+  · confirm：用户确认接受当前状态下机器人提供的方案（如"要""好""发吧"）
+  · cancel：用户想取消或不需要了
+  · select：用户在选择某个版本（填 selectedId 为对应 logoId）
+  · offTopic：与logo无关的闲聊
+
+- reply 的使用（其他情况留空）：
+  · action=offTopic：针对用户说的内容自然回应，结尾加「需要logo素材随时找我~」
+  · action=cancel：一句轻松随意的告别，如"好嘞，有需要再来找我~"
+  · action=request 且存在问题时（logo不支持改色、logo不存在、颜色有歧义、有多个版本可选等）：
+    用自然口语说明情况，告知能提供什么，询问是否需要或请用户进一步确认；
+    如果有多个候选版本，在 reply 里列出（如"找到两个版本：\n1. 3chat-symbol\n2. 3chat-symbol-circle\n你要哪个？"）
+
+- 其他注意：
+  · 颜色必须是合法3位或6位十六进制，如果用户给的颜色格式明显不对（位数不对等），在 reply 里友好提醒
+  · logo不支持改色但用户要求改色时，reply 里说明不支持、提供原版选项
+  · 如果有多个候选版本，logoId 留空，reply 列出选项
+  · format 默认 png，size 默认 512`,
     }],
   });
 
@@ -68,7 +89,7 @@ ${logoList}
     console.log('intent:', JSON.stringify(parsed));
     return parsed;
   } catch {
-    return { notFound: true };
+    return { action: 'request', reply: '没太理解你的意思，能再说一遍吗~' };
   }
 }
 
@@ -83,101 +104,60 @@ function swapColor(svg, oldColor, newColor) {
 
 function replaceSvgColor(svgContent, intent, logo) {
   if (!logo.colorEditable) return svgContent;
-
   let result = svgContent;
-
   if (logo.colorParts) {
     if (intent.color)     result = swapColor(result, logo.colorParts.circle, intent.color);
     if (intent.iconColor) result = swapColor(result, logo.colorParts.icon,   intent.iconColor);
   } else if (intent.color) {
     logo.colorNodes.forEach(old => { result = swapColor(result, old, intent.color); });
   }
-
   return result;
-}
-
-const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-
-function validateIntent(intent) {
-  const logo = manifest.logos.find(l => l.id === intent.logoId);
-  if (!logo) return null;
-
-  const fmt = (intent.format || 'png').toUpperCase();
-  const size = intent.size || 512;
-  const canProvide = `原版 ${fmt}（${size}px）`;
-
-  // 颜色不支持改色
-  if ((intent.color || intent.iconColor) && !logo.colorEditable) {
-    return `这个 logo 是固定多色版本，不支持改色。我现在能给你的是${canProvide}，需要吗？`;
-  }
-
-  // 颜色值格式不合法
-  for (const [field, val] of [['color', intent.color], ['iconColor', intent.iconColor]]) {
-    if (val && !HEX_RE.test(val)) {
-      return `颜色值 \`${val}\` 好像不对，需要 3 位或 6 位十六进制（如 #006fee）。你确认一下颜色值？`;
-    }
-  }
-
-  return null;
 }
 
 async function processLogo(intent) {
   const logo = manifest.logos.find(l => l.id === intent.logoId);
   if (!logo) return null;
 
-  let svgContent = fs.readFileSync(`./logos/${logo.id}.svg`, 'utf8');
+  // hex 格式安全检查（兜底，AI 应已拦截）
+  if (intent.color && !HEX_RE.test(intent.color)) intent.color = null;
+  if (intent.iconColor && !HEX_RE.test(intent.iconColor)) intent.iconColor = null;
 
+  let svgContent = fs.readFileSync(`./logos/${logo.id}.svg`, 'utf8');
   if (intent.color || intent.iconColor) {
     svgContent = replaceSvgColor(svgContent, intent, logo);
   }
 
   if (intent.format === 'svg') {
-    return { buffer: Buffer.from(svgContent), ext: 'svg', mime: 'image/svg+xml' };
+    return { buffer: Buffer.from(svgContent), ext: 'svg' };
   }
 
   const resvg = new Resvg(svgContent, {
-    fitTo: { mode: 'width', value: intent.size },
+    fitTo: { mode: 'width', value: intent.size || 512 },
     background: intent.bgColor || undefined,
   });
-  const buffer = resvg.render().asPng();
-  return { buffer, ext: 'png', mime: 'image/png' };
+  return { buffer: resvg.render().asPng(), ext: 'png' };
 }
 
 async function sendLogoToFeishu(chatId, fileResult, logoId) {
   if (fileResult.ext === 'svg') {
     const uploadRes = await larkClient.im.file.create({
-      data: {
-        file_type: 'stream',
-        file_name: `${logoId}.svg`,
-        file: fileResult.buffer,
-      },
+      data: { file_type: 'stream', file_name: `${logoId}.svg`, file: fileResult.buffer },
     });
     const fileKey = uploadRes?.data?.file_key ?? uploadRes?.file_key;
-    if (!fileKey) throw new Error(`文件上传失败，响应：${JSON.stringify(uploadRes)}`);
+    if (!fileKey) throw new Error(`文件上传失败：${JSON.stringify(uploadRes)}`);
     await larkClient.im.message.create({
       params: { receive_id_type: 'chat_id' },
-      data: {
-        receive_id: chatId,
-        msg_type: 'file',
-        content: JSON.stringify({ file_key: fileKey }),
-      },
+      data: { receive_id: chatId, msg_type: 'file', content: JSON.stringify({ file_key: fileKey }) },
     });
   } else {
     const uploadRes = await larkClient.im.image.create({
-      data: {
-        image_type: 'message',
-        image: fileResult.buffer,
-      },
+      data: { image_type: 'message', image: fileResult.buffer },
     });
     const imageKey = uploadRes?.data?.image_key ?? uploadRes?.image_key;
-    if (!imageKey) throw new Error(`图片上传失败，响应：${JSON.stringify(uploadRes)}`);
+    if (!imageKey) throw new Error(`图片上传失败：${JSON.stringify(uploadRes)}`);
     await larkClient.im.message.create({
       params: { receive_id_type: 'chat_id' },
-      data: {
-        receive_id: chatId,
-        msg_type: 'image',
-        content: JSON.stringify({ image_key: imageKey }),
-      },
+      data: { receive_id: chatId, msg_type: 'image', content: JSON.stringify({ image_key: imageKey }) },
     });
   }
 }
@@ -185,112 +165,84 @@ async function sendLogoToFeishu(chatId, fileResult, logoId) {
 async function replyText(chatId, text) {
   await larkClient.im.message.create({
     params: { receive_id_type: 'chat_id' },
-    data: {
-      receive_id: chatId,
-      msg_type: 'text',
-      content: JSON.stringify({ text }),
-    },
+    data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text }) },
   });
 }
 
 app.post('/webhook', async (req, res) => {
   const body = req.body;
-
-  console.log('收到请求:', JSON.stringify(body));
-
-  if (body.type === 'url_verification') {
-    return res.json({ challenge: body.challenge });
-  }
+  if (body.type === 'url_verification') return res.json({ challenge: body.challenge });
 
   const event = body?.event;
-  console.log('event:', JSON.stringify(event));
-  console.log('message_type:', event?.message?.message_type);
-
-  if (!event || event.message?.message_type !== 'text') {
-    console.log('消息类型不匹配，跳过');
-    return res.sendStatus(200);
-  }
+  if (!event || event.message?.message_type !== 'text') return res.sendStatus(200);
 
   res.sendStatus(200);
 
   const userText = JSON.parse(event.message.content).text.replace(/@\S+/g, '').trim();
   const chatId = event.message.chat_id;
 
-  const cancelKeywords = ['不用了', '取消', '算了', 'cancel', '不要了', 'quit'];
-
   try {
-    // 处理待确认的版本选择
-    if (pendingSelections.has(chatId)) {
-      if (cancelKeywords.some(k => userText.includes(k))) {
-        pendingSelections.delete(chatId);
-        await replyText(chatId, '好的，已取消。有需要随时告诉我 😊');
-        return;
-      }
-      const pending = pendingSelections.get(chatId);
+    const state = pending.get(chatId);
 
-      // 处理"属性不支持"的确认等待
-      if (pending.awaitingConfirm) {
-        const confirmKeywords = ['要', '好', '是', '需要', 'ok', 'OK', '发吧', '可以'];
-        if (confirmKeywords.some(k => userText.includes(k))) {
-          pendingSelections.delete(chatId);
-          const stripped = { ...pending.intent, color: null, iconColor: null };
-          const fileResult = await processLogo(stripped);
-          if (!fileResult) throw new Error('logo 文件不存在');
-          await sendLogoToFeishu(chatId, fileResult, stripped.logoId);
-        } else {
-          pendingSelections.delete(chatId);
-          await replyText(chatId, '好的，有需要随时告诉我 😊');
-        }
-        return;
-      }
+    // 构造上下文描述，传给 AI
+    let context = null;
+    if (state?.type === 'confirm') {
+      context = `机器人刚才告知用户当前请求有问题（如logo不支持改色等），等待用户确认是否需要原版。`;
+    } else if (state?.type === 'select') {
+      context = `机器人列出了多个logo版本供用户选择：${state.candidates.join('、')}，等待用户选择。`;
+    }
 
-      // 处理版本选择
-      const selected = resolveSelection(userText, pending.candidates);
-      if (!selected) {
-        const options = pending.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
-        await replyText(chatId, `没有找到对应版本，请回复序号或名称，或回复「取消」退出：\n${options}`);
-        return;
-      }
-      pendingSelections.delete(chatId);
-      const fileResult = await processLogo({ ...pending.intent, logoId: selected });
+    const intent = await parseIntent(userText, context);
+    const { action, reply } = intent;
+
+    if (action === 'offTopic' || action === 'cancel') {
+      pending.delete(chatId);
+      if (reply) await replyText(chatId, reply);
+      return;
+    }
+
+    if (action === 'confirm' && state?.type === 'confirm') {
+      pending.delete(chatId);
+      const stripped = { ...state.intent, color: null, iconColor: null };
+      const fileResult = await processLogo(stripped);
       if (!fileResult) throw new Error('logo 文件不存在');
-      await sendLogoToFeishu(chatId, fileResult, selected);
+      await sendLogoToFeishu(chatId, fileResult, stripped.logoId);
       return;
     }
 
-    const intent = await parseIntent(userText);
-
-    if (intent.offTopic) {
-      await replyText(chatId, intent.reply || '哈哈，这个我不太擅长，有需要logo素材随时告诉我 😊');
+    if (action === 'select' && state?.type === 'select') {
+      pending.delete(chatId);
+      const fileResult = await processLogo({ ...state.intent, logoId: intent.selectedId });
+      if (!fileResult) throw new Error('logo 文件不存在');
+      await sendLogoToFeishu(chatId, fileResult, intent.selectedId);
       return;
     }
 
-    if (intent.notFound) {
-      await replyText(chatId, '抱歉，没有找到对应的 logo，可以告诉我更多信息吗？');
+    // action === 'request'
+    if (reply) {
+      // AI 发现问题或需要选择，先回复用户
+      const type = intent.logoId ? 'confirm' : 'select';
+      const candidates = type === 'select'
+        ? manifest.logos.map(l => l.id).filter(id => reply.includes(id))
+        : null;
+      pending.set(chatId, { type, intent, candidates });
+      await replyText(chatId, reply);
       return;
     }
 
-    if (intent.ambiguous && intent.candidates?.length > 1) {
-      pendingSelections.set(chatId, { candidates: intent.candidates, intent });
-      const options = intent.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
-      await replyText(chatId, `找到多个版本，请选择：\n${options}`);
+    if (!intent.logoId) {
+      await replyText(chatId, '没找到对应的logo，能说得更具体些吗~');
       return;
     }
 
-    const warning = validateIntent(intent) || (intent.blocked ? intent.reply : null);
-    if (warning) {
-      pendingSelections.set(chatId, { candidates: null, intent, awaitingConfirm: true });
-      await replyText(chatId, warning);
-      return;
-    }
-
+    pending.delete(chatId);
     const fileResult = await processLogo(intent);
     if (!fileResult) throw new Error('logo 文件不存在');
-
     await sendLogoToFeishu(chatId, fileResult, intent.logoId);
+
   } catch (err) {
     console.error(err);
-    await replyText(chatId, '处理出错了，请稍后再试。');
+    await replyText(chatId, '出了点问题，稍后再试试吧~');
   }
 });
 
