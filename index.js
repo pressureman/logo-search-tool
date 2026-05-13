@@ -58,7 +58,7 @@ ${logoList}
 - notFound：能理解用户在找logo但库里没有时填 true
 - ambiguous：仅当用户说的品牌/名称同时对应多个版本时填 true，candidates 只列相关候选，logoId 留空；能明确判断则直接填 logoId
 - offTopic：消息与logo完全无关时填 true，reply 写一句自然友好的中文回复，结尾加「有需要logo素材随时告诉我」
-- blocked：用户的要求与logo能力冲突（如对「不支持改色」的logo要求改色）时填 true，reply 用自然语气说明限制、告知当前能提供什么（格式/尺寸），并询问是否需要；color/iconColor 仍然填 null
+- blocked：只要用户的消息中出现了颜色词（如"黑色"、"红色"、"#FF0000"等），且匹配到的logo标注为「不支持改色」，就必须将 blocked 设为 true——不能静默忽略颜色请求。reply 用自然口语说明该logo不支持改色，告知当前能提供的格式和尺寸，并询问用户是否需要原版。color/iconColor 填 null
 只返回JSON，不要其他文字。`,
     }],
   });
