@@ -54,7 +54,7 @@ ${logoList}
 - iconColor：仅对「圆色+图标色可分开控制」的logo有效，表示圆内图标的颜色
 - bgColor：画布背景色（导出图片时的底色），没提就填 null
 - notFound：找不到任何匹配时填 true
-- ambiguous：用户意图模糊、有多个候选logo时填 true，candidates 列出所有候选 logoId，logoId 留空
+- ambiguous：仅当用户说的品牌/名称同时对应多个版本（如"3chat"同时匹配3chat-symbol和3chat-symbol-circle）时填 true，candidates 只列这几个相关候选，logoId 留空。如果能明确判断用户要哪一个，就直接填 logoId，不要触发 ambiguous
 只返回JSON，不要其他文字。`,
     }],
   });
@@ -185,13 +185,21 @@ app.post('/webhook', async (req, res) => {
   const userText = JSON.parse(event.message.content).text.replace(/@\S+/g, '').trim();
   const chatId = event.message.chat_id;
 
+  const cancelKeywords = ['不用了', '取消', '算了', 'cancel', '不要了', 'quit'];
+
   try {
     // 处理待确认的版本选择
     if (pendingSelections.has(chatId)) {
+      if (cancelKeywords.some(k => userText.includes(k))) {
+        pendingSelections.delete(chatId);
+        await replyText(chatId, '好的，已取消。有需要随时告诉我 😊');
+        return;
+      }
       const pending = pendingSelections.get(chatId);
       const selected = resolveSelection(userText, pending.candidates);
       if (!selected) {
-        await replyText(chatId, `未识别到有效选择，请回复序号（如"1"）或名称`);
+        const options = pending.candidates.map((id, i) => `${i + 1}. ${id}`).join('\n');
+        await replyText(chatId, `没有找到对应版本，请回复序号或名称，或回复「取消」退出：\n${options}`);
         return;
       }
       pendingSelections.delete(chatId);
