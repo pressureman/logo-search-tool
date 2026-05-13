@@ -1,5 +1,5 @@
 const express = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
+const OpenAI = require('openai');
 const lark = require('@larksuiteoapi/node-sdk');
 const sharp = require('sharp');
 const fs = require('fs');
@@ -7,7 +7,10 @@ const fs = require('fs');
 const app = express();
 app.use(express.json());
 
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const deepseek = new OpenAI({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+  baseURL: 'https://api.deepseek.com',
+});
 const larkClient = new lark.Client({
   appId: process.env.FEISHU_APP_ID,
   appSecret: process.env.FEISHU_APP_SECRET,
@@ -23,8 +26,8 @@ async function parseIntent(userMessage) {
     })
     .join('\n');
 
-  const res = await claude.messages.create({
-    model: 'claude-sonnet-4-5',
+  const res = await deepseek.chat.completions.create({
+    model: 'deepseek-chat',
     max_tokens: 300,
     messages: [{
       role: 'user',
@@ -44,7 +47,7 @@ ${logoList}
   });
 
   try {
-    return JSON.parse(res.content[0].text);
+    return JSON.parse(res.choices[0].message.content.trim());
   } catch {
     return { notFound: true };
   }
