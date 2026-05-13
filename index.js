@@ -48,13 +48,14 @@ async function parseIntent(userMessage) {
 可用logo列表：
 ${logoList}
 
-请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[]}
+请返回JSON，格式：{"logoId":"","format":"svg|png","size":512,"color":"#RRGGBB或null","iconColor":"#RRGGBB或null","bgColor":"#RRGGBB或null","notFound":false,"ambiguous":false,"candidates":[],"offTopic":false,"reply":""}
 - format 默认 png，size 默认 512
 - color：单色logo的颜色；对于圆形logo，是圆的背景色
 - iconColor：仅对「圆色+图标色可分开控制」的logo有效，表示圆内图标的颜色
 - bgColor：画布背景色（导出图片时的底色），没提就填 null
-- notFound：找不到任何匹配时填 true
+- notFound：能理解用户在找logo但库里没有时填 true
 - ambiguous：仅当用户说的品牌/名称同时对应多个版本（如"3chat"同时匹配3chat-symbol和3chat-symbol-circle）时填 true，candidates 只列这几个相关候选，logoId 留空。如果能明确判断用户要哪一个，就直接填 logoId，不要触发 ambiguous
+- offTopic：消息与logo完全无关时填 true，同时在 reply 里写一句自然友好的中文回复（就像普通聊天一样针对用户说的内容回应，结尾可以加一句"有需要logo素材随时告诉我"）
 只返回JSON，不要其他文字。`,
     }],
   });
@@ -210,6 +211,11 @@ app.post('/webhook', async (req, res) => {
     }
 
     const intent = await parseIntent(userText);
+
+    if (intent.offTopic) {
+      await replyText(chatId, intent.reply || '哈哈，这个我不太擅长，有需要logo素材随时告诉我 😊');
+      return;
+    }
 
     if (intent.notFound) {
       await replyText(chatId, '抱歉，没有找到对应的 logo，可以告诉我更多信息吗？');
