@@ -107,12 +107,17 @@ async function sendLogoToFeishu(chatId, fileResult) {
     },
   });
 
+  console.log('uploadRes:', JSON.stringify(uploadRes));
+
+  const imageKey = uploadRes?.data?.image_key ?? uploadRes?.image_key;
+  if (!imageKey) throw new Error(`图片上传失败，响应：${JSON.stringify(uploadRes)}`);
+
   await larkClient.im.message.create({
     params: { receive_id_type: 'chat_id' },
     data: {
       receive_id: chatId,
       msg_type: 'image',
-      content: JSON.stringify({ image_key: uploadRes.data.image_key }),
+      content: JSON.stringify({ image_key: imageKey }),
     },
   });
 }
