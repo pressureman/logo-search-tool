@@ -20,6 +20,8 @@ const manifest = JSON.parse(fs.readFileSync('./logos/manifest.json', 'utf8'));
 
 // chatId -> { type: 'confirm'|'select', intent, candidates? }
 const pending = new Map();
+// 已处理的 message_id，防飞书重复推送
+const processed = new Set();
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
@@ -179,6 +181,16 @@ app.post('/webhook', async (req, res) => {
 
   res.sendStatus(200);
 
+  const msgId = event.message?.message_id;
+  if (msgId) {
+    if (processed.has(msgId)) return;
+    processed.add(msgId);
+    if (processed.size > 500) {
+      const first = processed.values().next().value;
+      processed.delete(first);
+    }
+  }
+
   const userText = JSON.parse(event.message.content).text.replace(/@\S+/g, '').trim();
   const chatId = event.message.chat_id;
 
@@ -188,10 +200,10 @@ app.post('/webhook', async (req, res) => {
     // 构造上下文描述，传给 AI
     let context = null;
     if (state?.type === 'confirm') {
-      context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），并询问是否需要原版，等待用户确认（是/否）。`;
+      context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
     } else if (state?.type === 'select') {
       const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
-      context = `机器人列出了多个logo版本：${list}，等待用户选择其中一个（用户说的"第一个"即 ${state.candidates[0]}，"第二个"即 ${state.candidates[1] ?? ''}）。`;
+      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。`;
     }
 
     const intent = await parseIntent(userText, context);
