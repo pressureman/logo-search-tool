@@ -35,9 +35,27 @@ async function parseIntent(userMessage, context = null) {
     })
     .join('\n');
 
+  // 预计算：哪些 alias 对应多个 logo（用于提示 AI）
+  const aliasGroups = {};
+  manifest.logos.forEach(l => {
+    l.aliases.forEach(a => {
+      const key = a.toLowerCase();
+      if (!aliasGroups[key]) aliasGroups[key] = new Set();
+      aliasGroups[key].add(l.id);
+    });
+  });
+  const sharedAliases = Object.entries(aliasGroups)
+    .filter(([, ids]) => ids.size > 1)
+    .map(([alias, ids]) => `"${alias}" → [${[...ids].join(', ')}]`)
+    .join('；');
+  const aliasNote = sharedAliases
+    ? `\n【多版本别名映射】以下别名对应多个logo版本，用户使用这些词时必须触发版本选择：\n${sharedAliases}`
+    : '';
+
   const contextSection = context
     ? `\n【当前对话状态】\n${context}\n用户的回复需要结合此状态理解。\n`
     : '';
+
 
   const res = await deepseek.chat.completions.create({
     model: 'deepseek-chat',
@@ -48,7 +66,7 @@ async function parseIntent(userMessage, context = null) {
 用户说：「${userMessage}」
 
 可用logo列表：
-${logoList}
+${logoList}${aliasNote}
 
 返回JSON，格式如下，只返回JSON不要其他文字：
 {

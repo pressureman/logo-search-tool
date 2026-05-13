@@ -23,7 +23,7 @@
     },
     {
       "id": "3chat-symbol-circle",
-      "aliases": ["3Chat圆形", "3chat-circle", "3chat圆"],
+      "aliases": ["3Chat", "3chat", "三chat", "3Chat圆形", "3chat-circle", "3chat圆"],
       "colorEditable": true,
       "colorParts": { "circle": "black", "icon": "white" },
       "tags": ["社交"]
