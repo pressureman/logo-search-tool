@@ -96,6 +96,30 @@ function replaceSvgColor(svgContent, intent, logo) {
   return result;
 }
 
+const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+function validateIntent(intent) {
+  const logo = manifest.logos.find(l => l.id === intent.logoId);
+  if (!logo) return null;
+
+  const fmt = (intent.format || 'png').toUpperCase();
+  const size = intent.size || 512;
+  const canProvide = `原版 ${fmt}（${size}px）`;
+
+  // 颜色不支持改色
+  if ((intent.color || intent.iconColor) && !logo.colorEditable) {
+    return `这个 logo 是固定多色版本，不支持改色。我现在能给你的是${canProvide}，需要吗？`;
+  }
+
+  // 颜色值格式不合法
+  for (const [field, val] of [['color', intent.color], ['iconColor', intent.iconColor]]) {
+    if (val && !HEX_RE.test(val)) {
+      return `颜色值 \`${val}\` 好像不对，需要 3 位或 6 位十六进制（如 #006fee）。你确认一下颜色值？`;
+    }
+  }
+
+  return null;
+}
 
 async function processLogo(intent) {
   const logo = manifest.logos.find(l => l.id === intent.logoId);
@@ -253,9 +277,10 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    if (intent.blocked) {
+    const warning = validateIntent(intent) || (intent.blocked ? intent.reply : null);
+    if (warning) {
       pendingSelections.set(chatId, { candidates: null, intent, awaitingConfirm: true });
-      await replyText(chatId, intent.reply);
+      await replyText(chatId, warning);
       return;
     }
 
