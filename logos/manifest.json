@@ -1,0 +1,32 @@
+{
+  "logos": [
+    {
+      "id": "apple-symbol",
+      "aliases": ["苹果", "Apple", "apple"],
+      "colorEditable": true,
+      "colorNodes": ["black"],
+      "tags": ["科技"]
+    },
+    {
+      "id": "google-symbol",
+      "aliases": ["谷歌", "Google", "google"],
+      "colorEditable": false,
+      "colorNodes": ["colorful"],
+      "tags": ["科技"]
+    },
+    {
+      "id": "3chat-symbol",
+      "aliases": ["3Chat", "3chat", "三chat"],
+      "colorEditable": true,
+      "colorNodes": ["black"],
+      "tags": ["社交"]
+    },
+    {
+      "id": "3chat-symbol-circle",
+      "aliases": ["3Chat圆形", "3chat-circle", "3chat圆"],
+      "colorEditable": true,
+      "colorParts": { "circle": "black", "icon": "white" },
+      "tags": ["社交"]
+    }
+  ]
+}
