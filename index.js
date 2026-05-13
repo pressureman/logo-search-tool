@@ -64,7 +64,9 @@ ${logoList}
   });
 
   try {
-    return JSON.parse(res.choices[0].message.content.trim());
+    const parsed = JSON.parse(res.choices[0].message.content.trim());
+    console.log('intent:', JSON.stringify(parsed));
+    return parsed;
   } catch {
     return { notFound: true };
   }
