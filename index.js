@@ -228,7 +228,27 @@ app.post('/webhook', async (req, res) => {
   if (body.type === 'url_verification') return res.json({ challenge: body.challenge });
 
   const event = body?.event;
-  if (!event || event.message?.message_type !== 'text') return res.sendStatus(200);
+  if (!event) return res.sendStatus(200);
+
+  const msgType = event.message?.message_type;
+  if (msgType && msgType !== 'text') {
+    res.sendStatus(200);
+    const chatId = event.message?.chat_id;
+    if (!chatId) return;
+    try {
+      const typeLabel = { image: '图片', file: '文件', audio: '语音', sticker: '表情', post: '富文本' }[msgType] || '该类型消息';
+      const res2 = await deepseek.chat.completions.create({
+        model: 'deepseek-chat',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: `你是公司内部logo素材助手，说话自然随意像靠谱同事。用户刚发了一条${typeLabel}，但你只能处理文字消息。用一句话自然地告知用户，引导他用文字告诉你要哪个logo。不要用感叹号，不要生硬。` }],
+      });
+      const reply = res2.choices[0].message.content.trim();
+      await replyText(chatId, reply);
+    } catch (err) {
+      console.error('非文本消息回复失败', err);
+    }
+    return;
+  }
 
   res.sendStatus(200);
 
