@@ -269,6 +269,10 @@ app.post('/webhook', async (req, res) => {
     if (action === 'confirm' && state?.type === 'confirm') {
       pending.delete(chatId);
       const stripped = { ...state.intent, color: null, iconColor: null };
+      if (!stripped.logoId) {
+        await replyText(chatId, '没找到对应的logo，能再说一下你要哪个~');
+        return;
+      }
       const fileResult = await processLogo(stripped);
       if (!fileResult) throw new Error('logo 文件不存在');
       await sendLogoToFeishu(chatId, fileResult, stripped.logoId);
@@ -297,8 +301,13 @@ app.post('/webhook', async (req, res) => {
     // action === 'request'
     if (reply) {
       const hasCandidates = intent.candidates?.length > 1;
-      const type = hasCandidates ? 'select' : 'confirm';
-      pending.set(chatId, { type, intent, candidates: intent.candidates ?? [] });
+      // 只有有实际 logo 可操作时才建立 pending 状态
+      if (hasCandidates || intent.logoId) {
+        const type = hasCandidates ? 'select' : 'confirm';
+        pending.set(chatId, { type, intent, candidates: intent.candidates ?? [] });
+      } else {
+        pending.delete(chatId);
+      }
       await replyText(chatId, reply);
       return;
     }
