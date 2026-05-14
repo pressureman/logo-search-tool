@@ -3,6 +3,7 @@ const OpenAI = require('openai');
 const lark = require('@larksuiteoapi/node-sdk');
 const { Resvg } = require('@resvg/resvg-js');
 const sharp = require('sharp');
+const JSZip = require('jszip');
 const fs = require('fs');
 
 const app = express();
@@ -74,6 +75,7 @@ ${logoList}${aliasNote}
   "action": "request|confirm|cancel|select|offTopic",
   "logoId": "",
   "selectedId": "",
+  "selectedIds": [],
   "candidates": [],
   "format": "svg|png|jpg|webp",
   "size": 512,
@@ -88,7 +90,7 @@ ${logoList}${aliasNote}
   · request：用户在请求logo（新请求或重新请求）
   · confirm：用户确认接受当前状态下机器人提供的方案（如"要""好""发吧"）
   · cancel：用户想取消或不需要了
-  · select：用户在选择某个版本（填 selectedId 为对应 logoId）
+  · select：用户在选择某个版本；若用户要全部（"都要""全给我"等），selectedIds 填所有候选 logoId，selectedId 留空；否则 selectedId 填对应 logoId，selectedIds 留空
   · offTopic：与logo无关的闲聊
 
 【系统能力边界 - 严格遵守】
@@ -179,6 +181,18 @@ async function processLogo(intent) {
   return { buffer: pngBuffer, ext: 'png' };
 }
 
+async function sendZipToFeishu(chatId, zipBuffer, filename) {
+  const uploadRes = await larkClient.im.file.create({
+    data: { file_type: 'zip', file_name: filename, file: zipBuffer },
+  });
+  const fileKey = uploadRes?.data?.file_key ?? uploadRes?.file_key;
+  if (!fileKey) throw new Error(`ZIP上传失败：${JSON.stringify(uploadRes)}`);
+  await larkClient.im.message.create({
+    params: { receive_id_type: 'chat_id' },
+    data: { receive_id: chatId, msg_type: 'file', content: JSON.stringify({ file_key: fileKey }) },
+  });
+}
+
 async function sendLogoToFeishu(chatId, fileResult, logoId) {
   if (fileResult.ext === 'svg') {
     const uploadRes = await larkClient.im.file.create({
@@ -241,7 +255,7 @@ app.post('/webhook', async (req, res) => {
       context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
     } else if (state?.type === 'select') {
       const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
-      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。`;
+      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
     }
 
     const intent = await parseIntent(userText, context);
@@ -264,9 +278,20 @@ app.post('/webhook', async (req, res) => {
 
     if (action === 'select' && state?.type === 'select') {
       pending.delete(chatId);
-      const fileResult = await processLogo({ ...state.intent, logoId: intent.selectedId });
-      if (!fileResult) throw new Error('logo 文件不存在');
-      await sendLogoToFeishu(chatId, fileResult, intent.selectedId);
+      const selectedIds = intent.selectedIds?.length > 1 ? intent.selectedIds : null;
+      if (selectedIds) {
+        const zip = new JSZip();
+        for (const logoId of selectedIds) {
+          const fileResult = await processLogo({ ...state.intent, logoId });
+          if (fileResult) zip.file(`${logoId}.${fileResult.ext}`, fileResult.buffer);
+        }
+        const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+        await sendZipToFeishu(chatId, zipBuffer, 'logos.zip');
+      } else {
+        const fileResult = await processLogo({ ...state.intent, logoId: intent.selectedId });
+        if (!fileResult) throw new Error('logo 文件不存在');
+        await sendLogoToFeishu(chatId, fileResult, intent.selectedId);
+      }
       return;
     }
 
