@@ -165,8 +165,7 @@ async function processLogo(intent) {
     fitTo: { mode: 'width', value: intent.size || 512 },
     background: intent.bgColor || undefined,
   });
-  const renderData = await resvg.renderAsync();
-  const pngBuffer = renderData.asPng();
+  const pngBuffer = resvg.render().asPng();
 
   const fmt = intent.format?.toLowerCase();
   if (fmt === 'jpg' || fmt === 'jpeg') {
