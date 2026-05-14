@@ -182,7 +182,7 @@ async function processLogo(intent) {
 
 async function sendZipToFeishu(chatId, zipBuffer, filename) {
   const uploadRes = await larkClient.im.file.create({
-    data: { file_type: 'zip', file_name: filename, file: zipBuffer },
+    data: { file_type: 'stream', file_name: filename, file: zipBuffer },
   });
   const fileKey = uploadRes?.data?.file_key ?? uploadRes?.file_key;
   if (!fileKey) throw new Error(`ZIP上传失败：${JSON.stringify(uploadRes)}`);
