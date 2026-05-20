@@ -110,7 +110,8 @@ ${logoList}${aliasNote}
     - 有多个候选版本 → 列出选项，candidates 填所有候选 logoId
   · 存在问题时 color/iconColor 必须填 null，不能填一个"大概"的颜色去蒙混
   · 如果有多个候选版本，logoId 留空，candidates 填入所有候选 logoId
-  · format 默认 png，size 默认 512`,
+  · format 默认 png，size 默认 512
+  · 【重要】如果用户请求的 logo 不在可用列表中，reply 必须留空，logoId 留空，系统会自动去在线搜索，不要自己说"找不到"`,
     }],
   });
 
