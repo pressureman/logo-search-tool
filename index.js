@@ -20,12 +20,14 @@ const larkClient = new lark.Client({
 
 const manifest = JSON.parse(fs.readFileSync('./logos/manifest.json', 'utf8'));
 
-// chatId -> { type: 'confirm'|'select', intent, candidates? }
+// chatId -> { type: 'confirm'|'select'|'online_select'|'online_options', ... }
 const pending = new Map();
 // 已处理的 message_id，防飞书重复推送
 const processed = new Set();
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+// ─── 本地 Logo 意图解析 ────────────────────────────────────────────────────────
 
 async function parseIntent(userMessage, context = null) {
   const logoList = manifest.logos
@@ -37,7 +39,6 @@ async function parseIntent(userMessage, context = null) {
     })
     .join('\n');
 
-  // 预计算：哪些 alias 对应多个 logo（用于提示 AI）
   const aliasGroups = {};
   manifest.logos.forEach(l => {
     l.aliases.forEach(a => {
@@ -57,7 +58,6 @@ async function parseIntent(userMessage, context = null) {
   const contextSection = context
     ? `\n【当前对话状态】\n${context}\n用户的回复需要结合此状态理解。\n`
     : '';
-
 
   const res = await deepseek.chat.completions.create({
     model: 'deepseek-v4-flash',
@@ -123,6 +123,8 @@ ${logoList}${aliasNote}
   }
 }
 
+// ─── 本地 SVG 处理 ─────────────────────────────────────────────────────────────
+
 function swapColor(svg, oldColor, newColor) {
   const esc = oldColor.replace(/#/g, '\\#');
   return svg
@@ -148,7 +150,6 @@ async function processLogo(intent) {
   const logo = manifest.logos.find(l => l.id === intent.logoId);
   if (!logo) return null;
 
-  // hex 格式安全检查（兜底，AI 应已拦截）
   if (intent.color && !HEX_RE.test(intent.color)) intent.color = null;
   if (intent.iconColor && !HEX_RE.test(intent.iconColor)) intent.iconColor = null;
 
@@ -165,7 +166,8 @@ async function processLogo(intent) {
     fitTo: { mode: 'width', value: intent.size || 512 },
     background: intent.bgColor || undefined,
   });
-  const pngBuffer = resvg.render().asPng();
+  const renderData = await resvg.renderAsync();
+  const pngBuffer = renderData.asPng();
 
   const fmt = intent.format?.toLowerCase();
   if (fmt === 'jpg' || fmt === 'jpeg') {
@@ -179,6 +181,296 @@ async function processLogo(intent) {
 
   return { buffer: pngBuffer, ext: 'png' };
 }
+
+// ─── 在线搜索：工具函数 ────────────────────────────────────────────────────────
+
+async function generateReply(prompt) {
+  const res = await deepseek.chat.completions.create({
+    model: 'deepseek-v4-flash',
+    max_tokens: 150,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  return res.choices[0].message.content.trim();
+}
+
+async function translateToSearchSlugs(userInput) {
+  const res = await deepseek.chat.completions.create({
+    model: 'deepseek-v4-flash',
+    max_tokens: 150,
+    messages: [{
+      role: 'user',
+      content: `将以下品牌名转换为 SimpleIcons 的 slug 格式（全小写，去空格和特殊字符）。
+品牌名：「${userInput}」
+返回JSON，只返回JSON不要其他文字：{"brandName": "英文品牌名", "slugs": ["slug1", "slug2"]}
+slugs 最多3个，从最可能到最不可能排序。例如"微信"→{"brandName":"WeChat","slugs":["wechat","weixin"]}`,
+    }],
+  });
+  try {
+    return JSON.parse(res.choices[0].message.content.trim());
+  } catch {
+    return null;
+  }
+}
+
+async function checkSimpleIconsSlugs(slugs) {
+  const results = await Promise.all(
+    slugs.map(async slug => {
+      try {
+        const res = await fetch(`https://cdn.simpleicons.org/${slug}.svg`, { method: 'HEAD' });
+        return res.ok ? slug : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter(Boolean);
+}
+
+async function searchWikimedia(brandName) {
+  try {
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(brandName + ' logo')}&srnamespace=6&srlimit=10&format=json&origin=*`;
+    const res = await fetch(searchUrl);
+    const data = await res.json();
+    const files = (data?.query?.search ?? []).map(r => r.title);
+    if (!files.length) return [];
+
+    const aiRes = await deepseek.chat.completions.create({
+      model: 'deepseek-v4-flash',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `从以下 Wikimedia Commons 文件列表中，选出最可能是"${brandName}"官方 logo 的1~3个，优先选 SVG 格式。
+文件列表：
+${files.join('\n')}
+返回JSON，只返回JSON：{"candidates": [{"title": "File:xxx.svg", "description": "简短说明"}]}`,
+      }],
+    });
+    const parsed = JSON.parse(aiRes.choices[0].message.content.trim());
+    return parsed.candidates ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function getWikimediaFileUrl(title) {
+  try {
+    const url = `https://commons.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|mime&format=json&origin=*`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const pages = Object.values(data?.query?.pages ?? {});
+    const info = pages[0]?.imageinfo?.[0];
+    return info ? { url: info.url, mime: info.mime } : null;
+  } catch {
+    return null;
+  }
+}
+
+function analyzeOnlineSvg(svgText, source) {
+  // 嵌入位图
+  if (/<image[\s>]/i.test(svgText)) {
+    return { colorEditable: false, isBitmap: true, colorNodes: [] };
+  }
+  // SimpleIcons 规范保证单色
+  if (source === 'simpleicons') {
+    const colors = [...svgText.matchAll(/fill="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase());
+    const unique = [...new Set(colors.filter(c => c !== '#ffffff' && c !== '#fff'))];
+    return { colorEditable: true, isBitmap: false, colorNodes: unique.length ? unique : ['#000000'] };
+  }
+  // Wikimedia：先检查渐变/pattern
+  if (/<(linearGradient|radialGradient|pattern)[\s>]/i.test(svgText) || /fill="url\(#/i.test(svgText)) {
+    return { colorEditable: false, isBitmap: false, colorNodes: [] };
+  }
+  // 计算有效色值
+  const IGNORE = new Set(['#ffffff', '#fff', '#ffffffff', '#000000', '#000']);
+  const allColors = [
+    ...[...svgText.matchAll(/fill="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase()),
+    ...[...svgText.matchAll(/stroke="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase()),
+  ].filter(c => !IGNORE.has(c));
+  const unique = [...new Set(allColors)];
+  if (unique.length === 1) {
+    return { colorEditable: true, isBitmap: false, colorNodes: unique };
+  }
+  return { colorEditable: false, isBitmap: false, colorNodes: [] };
+}
+
+async function downloadAndAnalyze(candidate) {
+  const res = await fetch(candidate.svgUrl);
+  if (!res.ok) throw new Error(`下载失败: ${res.status}`);
+  const arrayBuffer = await res.arrayBuffer();
+  const fileBuffer = Buffer.from(arrayBuffer);
+
+  let { fileType } = candidate;
+  let colorEditable = false;
+  let colorNodes = [];
+  let maxSize = null;
+  let isBitmap = false;
+
+  if (fileType === 'svg') {
+    const svgText = fileBuffer.toString('utf8');
+    const analysis = analyzeOnlineSvg(svgText, candidate.source);
+    colorEditable = analysis.colorEditable;
+    colorNodes = analysis.colorNodes;
+    isBitmap = analysis.isBitmap;
+    if (isBitmap) {
+      fileType = 'png';
+      try { const meta = await sharp(fileBuffer).metadata(); maxSize = meta.width; } catch {}
+    }
+  } else {
+    isBitmap = true;
+    try { const meta = await sharp(fileBuffer).metadata(); maxSize = meta.width; } catch {}
+  }
+
+  return { ...candidate, fileBuffer, fileType, colorEditable, colorNodes, maxSize, isBitmap };
+}
+
+async function processOnlineLogo(selected, intent) {
+  const { fileBuffer, fileType, colorEditable, colorNodes, maxSize } = selected;
+  const fmt = (intent.format || 'png').toLowerCase();
+  const requestedSize = intent.size || 512;
+  const size = maxSize ? Math.min(requestedSize, maxSize) : requestedSize;
+
+  if (fileType === 'svg' && !selected.isBitmap) {
+    let svgText = fileBuffer.toString('utf8');
+    if (colorEditable && intent.color && HEX_RE.test(intent.color)) {
+      colorNodes.forEach(oldColor => { svgText = swapColor(svgText, oldColor, intent.color); });
+    }
+    if (fmt === 'svg') return { buffer: Buffer.from(svgText), ext: 'svg' };
+
+    const resvg = new Resvg(svgText, {
+      fitTo: { mode: 'width', value: size },
+      background: intent.bgColor || undefined,
+    });
+    const renderData = await resvg.renderAsync();
+    const pngBuf = renderData.asPng();
+
+    if (fmt === 'jpg' || fmt === 'jpeg') {
+      return { buffer: await sharp(pngBuf).jpeg({ quality: 95 }).toBuffer(), ext: 'jpg' };
+    }
+    if (fmt === 'webp') {
+      return { buffer: await sharp(pngBuf).webp({ quality: 95 }).toBuffer(), ext: 'webp' };
+    }
+    return { buffer: pngBuf, ext: 'png' };
+  } else {
+    // 位图：sharp 处理，不超过原始尺寸
+    let sharpInst = sharp(fileBuffer).resize(size, null, { withoutEnlargement: true });
+    if (fmt === 'jpg' || fmt === 'jpeg') {
+      return { buffer: await sharpInst.jpeg({ quality: 95 }).toBuffer(), ext: 'jpg' };
+    }
+    if (fmt === 'webp') {
+      return { buffer: await sharpInst.webp({ quality: 95 }).toBuffer(), ext: 'webp' };
+    }
+    return { buffer: await sharpInst.png().toBuffer(), ext: 'png' };
+  }
+}
+
+async function parseOnlineOptions(userText, selected, intent) {
+  const res = await deepseek.chat.completions.create({
+    model: 'deepseek-v4-flash',
+    max_tokens: 150,
+    messages: [{
+      role: 'user',
+      content: `用户正在确认在线logo的输出参数。${selected.colorEditable ? '支持改色。' : '不支持改色。'}${selected.maxSize ? `最大尺寸${selected.maxSize}px。` : ''}
+用户说：「${userText}」
+返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 512, "format": "png|jpg|webp|svg"}
+- action=confirm：用户接受（包括"好""发吧""默认就行"等）
+- action=cancel：用户取消
+- color：${selected.colorEditable ? '用户指定了则填入，否则null' : '固定null'}
+- size：默认${selected.maxSize || 512}${selected.maxSize ? `，不超过${selected.maxSize}` : ''}
+- format：默认png`,
+    }],
+  });
+  try {
+    return JSON.parse(res.choices[0].message.content.trim());
+  } catch {
+    return { action: 'confirm', color: null, size: intent.size || 512, format: intent.format || 'png' };
+  }
+}
+
+// ─── 在线搜索：主流程 ──────────────────────────────────────────────────────────
+
+async function downloadAndAskOptions(chatId, candidate, intent) {
+  let selected;
+  try {
+    selected = await downloadAndAnalyze(candidate);
+  } catch (err) {
+    console.error('下载失败', err);
+    await replyText(chatId, await generateReply(`你是logo素材助手，在线找到了logo但下载失败了。自然地告知用户，建议稍后再试或换个说法。`));
+    return;
+  }
+
+  const sourceLabel = candidate.source === 'simpleicons' ? 'SimpleIcons' : 'Wikimedia Commons';
+  const colorDesc = selected.colorEditable ? '支持改色（可指定颜色）' : '固定多色（不支持改色）';
+  const sizeDesc = selected.maxSize ? `原图最大 ${selected.maxSize}px` : '矢量图，支持任意尺寸';
+  const reply = await generateReply(
+    `你是logo素材助手，在 ${sourceLabel} 找到了用户想要的"${candidate.slug}"logo。${colorDesc}，${sizeDesc}，默认发 PNG。用自然语言询问用户是否需要指定颜色/尺寸/格式，或直接按默认发送。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气自然随意，不要感叹号。`
+  );
+  pending.set(chatId, { type: 'online_options', selected, intent });
+  await replyText(chatId, reply);
+}
+
+async function searchOnlineAndReply(chatId, userInput, intent) {
+  const translated = await translateToSearchSlugs(userInput);
+  if (!translated) {
+    await replyText(chatId, await generateReply(`你是logo素材助手，本地库没找到用户要的logo，在线翻译也失败了。自然地告知找不到，建议换个说法。`));
+    return;
+  }
+
+  const { brandName, slugs } = translated;
+  console.log(`在线搜索：${userInput} → ${brandName}，slugs: ${slugs.join(', ')}`);
+
+  // SimpleIcons
+  const foundSlugs = await checkSimpleIconsSlugs(slugs);
+  let candidates = foundSlugs.map(slug => ({
+    slug,
+    source: 'simpleicons',
+    svgUrl: `https://cdn.simpleicons.org/${slug}.svg`,
+    fileType: 'svg',
+    description: `${slug}（SimpleIcons）`,
+  }));
+
+  // Wikimedia 兜底
+  if (candidates.length === 0) {
+    const wikiCandidates = await searchWikimedia(brandName);
+    for (const c of wikiCandidates) {
+      const fileInfo = await getWikimediaFileUrl(c.title);
+      if (!fileInfo) continue;
+      const rawExt = fileInfo.url.split('.').pop().toLowerCase().split('?')[0];
+      const extMap = { jpeg: 'jpg', jpg: 'jpg', png: 'png', webp: 'webp', svg: 'svg' };
+      const fileType = extMap[rawExt] ?? null;
+      if (!fileType) continue;
+      candidates.push({
+        slug: c.title.replace('File:', ''),
+        source: 'wikimedia',
+        svgUrl: fileInfo.url,
+        fileType,
+        description: `${c.title.replace('File:', '')}（Wikimedia，${c.description}）`,
+      });
+    }
+  }
+
+  if (candidates.length === 0) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想要"${userInput}"的logo，本地库、SimpleIcons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
+    );
+    await replyText(chatId, reply);
+    return;
+  }
+
+  if (candidates.length === 1) {
+    await downloadAndAskOptions(chatId, candidates[0], intent);
+    return;
+  }
+
+  // 多个候选，让用户选
+  const candidateDesc = candidates.map((c, i) => `${i + 1}. ${c.description}`).join('；');
+  const reply = await generateReply(
+    `你是logo素材助手，在线找到"${brandName}"有${candidates.length}个版本：${candidateDesc}。用自然语言列出让用户选一个，语气随意。`
+  );
+  pending.set(chatId, { type: 'online_select', candidates, intent });
+  await replyText(chatId, reply);
+}
+
+// ─── 飞书消息发送 ──────────────────────────────────────────────────────────────
 
 async function sendZipToFeishu(chatId, zipBuffer, filename) {
   const uploadRes = await larkClient.im.file.create({
@@ -223,6 +515,8 @@ async function replyText(chatId, text) {
   });
 }
 
+// ─── Webhook 主处理 ────────────────────────────────────────────────────────────
+
 app.post('/webhook', async (req, res) => {
   const body = req.body;
   if (body.type === 'url_verification') return res.json({ challenge: body.challenge });
@@ -237,12 +531,9 @@ app.post('/webhook', async (req, res) => {
     if (!chatId) return;
     try {
       const typeLabel = { image: '图片', file: '文件', audio: '语音', sticker: '表情', post: '富文本' }[msgType] || '该类型消息';
-      const res2 = await deepseek.chat.completions.create({
-        model: 'deepseek-chat',
-        max_tokens: 100,
-        messages: [{ role: 'user', content: `你是公司内部logo素材助手，说话自然随意像靠谱同事。用户刚发了一条${typeLabel}，但你只能处理文字消息。用一句话自然地告知用户，引导他用文字告诉你要哪个logo。不要用感叹号，不要生硬。` }],
-      });
-      const reply = res2.choices[0].message.content.trim();
+      const reply = await generateReply(
+        `你是公司内部logo素材助手，说话自然随意像靠谱同事。用户刚发了一条${typeLabel}，但你只能处理文字消息。用一句话自然地告知用户，引导他用文字告诉你要哪个logo。不要用感叹号，不要生硬。`
+      );
       await replyText(chatId, reply);
     } catch (err) {
       console.error('非文本消息回复失败', err);
@@ -268,7 +559,59 @@ app.post('/webhook', async (req, res) => {
   try {
     const state = pending.get(chatId);
 
-    // 构造上下文描述，传给 AI
+    // ── 在线搜索：用户从多候选中选择 ──
+    if (state?.type === 'online_select') {
+      const candidates = state.candidates;
+      const listDesc = candidates.map((c, i) => `${i + 1}=${c.slug}`).join('，');
+      const selectRes = await deepseek.chat.completions.create({
+        model: 'deepseek-v4-flash',
+        max_tokens: 50,
+        messages: [{
+          role: 'user',
+          content: `候选列表：${listDesc}。用户说「${userText}」，选的是第几个（0-based index）？返回JSON：{"index": 0}，不确定则返回{"index": -1}`,
+        }],
+      });
+      let idx = -1;
+      try { idx = JSON.parse(selectRes.choices[0].message.content.trim()).index ?? -1; } catch {}
+
+      if (idx < 0 || idx >= candidates.length) {
+        const reply = await generateReply(
+          `你是logo素材助手，用户需要从${candidates.length}个版本里选一个，但没听清楚选了哪个。自然地再问一次。`
+        );
+        await replyText(chatId, reply);
+        return; // 保留 pending 状态
+      }
+
+      pending.delete(chatId);
+      await downloadAndAskOptions(chatId, candidates[idx], state.intent);
+      return;
+    }
+
+    // ── 在线搜索：用户确认参数选项 ──
+    if (state?.type === 'online_options') {
+      const options = await parseOnlineOptions(userText, state.selected, state.intent);
+
+      if (options.action === 'cancel') {
+        pending.delete(chatId);
+        const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
+        await replyText(chatId, reply);
+        return;
+      }
+
+      pending.delete(chatId);
+      const finalIntent = {
+        ...state.intent,
+        color: options.color,
+        size: options.size || state.intent.size || 512,
+        format: options.format || state.intent.format || 'png',
+      };
+      const fileResult = await processOnlineLogo(state.selected, finalIntent);
+      const safeId = state.selected.slug.replace(/[^a-zA-Z0-9\-_]/g, '_');
+      await sendLogoToFeishu(chatId, fileResult, safeId);
+      return;
+    }
+
+    // ── 构造本地上下文 ──
     let context = null;
     if (state?.type === 'confirm') {
       context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
@@ -321,7 +664,6 @@ app.post('/webhook', async (req, res) => {
     // action === 'request'
     if (reply) {
       const hasCandidates = intent.candidates?.length > 1;
-      // 只有有实际 logo 可操作时才建立 pending 状态
       if (hasCandidates || intent.logoId) {
         const type = hasCandidates ? 'select' : 'confirm';
         pending.set(chatId, { type, intent, candidates: intent.candidates ?? [] });
@@ -332,15 +674,17 @@ app.post('/webhook', async (req, res) => {
       return;
     }
 
-    if (!intent.logoId) {
-      await replyText(chatId, '没找到对应的logo，能说得更具体些吗~');
+    // 本地找到，直接处理
+    if (intent.logoId) {
+      pending.delete(chatId);
+      const fileResult = await processLogo(intent);
+      if (!fileResult) throw new Error('logo 文件不存在');
+      await sendLogoToFeishu(chatId, fileResult, intent.logoId);
       return;
     }
 
-    pending.delete(chatId);
-    const fileResult = await processLogo(intent);
-    if (!fileResult) throw new Error('logo 文件不存在');
-    await sendLogoToFeishu(chatId, fileResult, intent.logoId);
+    // 本地未找到 → 触发在线搜索
+    await searchOnlineAndReply(chatId, userText, intent);
 
   } catch (err) {
     console.error(err);
