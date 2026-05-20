@@ -60,7 +60,7 @@ async function parseIntent(userMessage, context = null) {
 
 
   const res = await deepseek.chat.completions.create({
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     max_tokens: 500,
     messages: [{
       role: 'user',
