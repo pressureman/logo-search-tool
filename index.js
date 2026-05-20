@@ -217,7 +217,8 @@ async function checkSimpleIconsSlugs(slugs) {
   const results = await Promise.all(
     slugs.map(async slug => {
       try {
-        const res = await fetch(`https://cdn.simpleicons.org/${slug}.svg`, { method: 'HEAD' });
+        // SimpleIcons CDN 不带扩展名，HEAD 可能被拦截用 GET
+        const res = await fetch(`https://cdn.simpleicons.org/${slug}`, { method: 'GET' });
         return res.ok ? slug : null;
       } catch {
         return null;
@@ -424,7 +425,7 @@ async function searchOnlineAndReply(chatId, userInput, intent) {
   let candidates = foundSlugs.map(slug => ({
     slug,
     source: 'simpleicons',
-    svgUrl: `https://cdn.simpleicons.org/${slug}.svg`,
+    svgUrl: `https://cdn.simpleicons.org/${slug}`,
     fileType: 'svg',
     description: `${slug}（SimpleIcons）`,
   }));
