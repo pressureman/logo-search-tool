@@ -212,16 +212,15 @@ slugs 最多3个，从最可能到最不可能排序。例如"微信"→{"brandN
   }
 }
 
+const SI_BASE = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons';
+
 async function checkSimpleIconsSlugs(slugs) {
-  console.log(`[si] 检查 slugs: ${slugs.join(', ')}，fetch 类型: ${typeof fetch}`);
   const results = await Promise.all(
     slugs.map(async slug => {
       try {
-        const res = await fetch(`https://cdn.simpleicons.org/${slug}`, { method: 'GET' });
-        console.log(`[si] ${slug} → ${res.status}`);
+        const res = await fetch(`${SI_BASE}/${slug}.svg`, { method: 'HEAD' });
         return res.ok ? slug : null;
-      } catch (e) {
-        console.log(`[si] ${slug} 异常: ${e.message}`);
+      } catch {
         return null;
       }
     })
@@ -425,7 +424,7 @@ async function searchOnlineAndReply(chatId, userInput, intent) {
   let candidates = foundSlugs.map(slug => ({
     slug,
     source: 'simpleicons',
-    svgUrl: `https://cdn.simpleicons.org/${slug}`,
+    svgUrl: `${SI_BASE}/${slug}.svg`,
     fileType: 'svg',
     description: `${slug}（SimpleIcons）`,
   }));
