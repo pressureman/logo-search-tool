@@ -187,7 +187,7 @@ async function processLogo(intent) {
 async function generateReply(prompt) {
   const res = await deepseek.chat.completions.create({
     model: 'deepseek-v4-flash',
-    max_tokens: 150,
+    max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
   });
   return res.choices[0].message.content.trim();
@@ -212,7 +212,7 @@ slugs 最多3个，从最可能到最不可能排序。例如"微信"→{"brandN
   }
 }
 
-const SI_BASE = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons';
+const SI_BASE = 'https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons';
 
 async function checkSimpleIconsSlugs(slugs) {
   const results = await Promise.all(
