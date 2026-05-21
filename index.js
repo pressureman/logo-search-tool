@@ -74,6 +74,7 @@ ${logoList}${aliasNote}
 {
   "action": "request|confirm|cancel|select|offTopic",
   "logoId": "",
+  "brandHint": "",
   "selectedId": "",
   "selectedIds": [],
   "candidates": [],
@@ -86,6 +87,7 @@ ${logoList}${aliasNote}
 }
 
 各字段说明：
+- brandHint：当 logoId 为空时（本地库没有该logo），填入用户意图中的品牌名称，只保留品牌名，去掉"logo""图标""svg""png""webp""jpg"等格式词和颜色词及动词；若 logoId 已有值则留空。
 - action：
   · request：用户在请求logo（新请求或重新请求）
   · confirm：用户确认接受当前状态下机器人提供的方案（如"要""好""发吧"）
@@ -418,14 +420,22 @@ async function downloadAndAskOptions(chatId, candidate, intent) {
 }
 
 async function searchOnlineAndReply(chatId, userInput, intent) {
-  const translated = await translateToSearchSlugs(userInput);
+  // 优先用 brandHint（AI 已提取好的品牌名），避免 svg/颜色等词干扰 slug 生成
+  const searchInput = intent.brandHint || userInput;
+
+  let translated = await translateToSearchSlugs(searchInput);
+  // 若 JSON 解析偶发失败，重试一次
+  if (!translated) {
+    console.log(`[在线搜索] translateToSearchSlugs 返回 null，重试一次（input: ${searchInput}）`);
+    translated = await translateToSearchSlugs(searchInput);
+  }
   if (!translated) {
     await replyText(chatId, await generateReply(`你是logo素材助手，本地库没找到用户要的logo，在线翻译也失败了。自然地告知找不到，建议换个说法。`));
     return;
   }
 
   const { brandName, slugs } = translated;
-  console.log(`在线搜索：${userInput} → ${brandName}，slugs: ${slugs.join(', ')}`);
+  console.log(`在线搜索：${searchInput} → ${brandName}，slugs: ${slugs.join(', ')}`);
 
   // SimpleIcons
   const foundSlugs = await checkSimpleIconsSlugs(slugs);
