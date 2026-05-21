@@ -68,7 +68,18 @@ function extractJSON(content) {
 async function callDeepSeek(params, retries = 2, delayMs = 2000) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await deepseek.chat.completions.create(params);
+      const res = await deepseek.chat.completions.create(params);
+      // 空 content 也视为需要重试（DeepSeek 偶发返回空响应）
+      const content = res.choices?.[0]?.message?.content;
+      if (!content) {
+        if (attempt < retries) {
+          console.log(`[DeepSeek] 空响应，${delayMs / 1000}s 后重试（第 ${attempt + 1} 次）`);
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+        console.error('[DeepSeek] 多次重试后仍返回空响应');
+      }
+      return res;
     } catch (err) {
       const status = err?.status ?? err?.response?.status;
       const retryable = status === 503 || status === 429;
