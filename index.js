@@ -50,6 +50,20 @@ function resolveColor(raw) {
   return COLOR_NAME_MAP[raw.trim().toLowerCase()] ?? null;
 }
 
+// 从 AI 返回内容中提取 JSON（兼容 markdown 代码块、前后多余文字等）
+function extractJSON(content) {
+  const text = content.trim();
+  // 直接解析
+  try { return JSON.parse(text); } catch {}
+  // 去掉 ```json ... ``` 或 ``` ... ```
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fence) { try { return JSON.parse(fence[1]); } catch {} }
+  // 提取第一个 {...} 块
+  const brace = text.match(/\{[\s\S]*\}/);
+  if (brace) { try { return JSON.parse(brace[0]); } catch {} }
+  return null;
+}
+
 // ─── DeepSeek 调用封装（503/429 自动重试）─────────────────────────────────────
 async function callDeepSeek(params, retries = 2, delayMs = 2000) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -160,7 +174,7 @@ ${logoList}${aliasNote}
   });
 
   try {
-    const parsed = JSON.parse(res.choices[0].message.content.trim());
+    const parsed = extractJSON(res.choices[0].message.content);
     parsed.color = resolveColor(parsed.color);
     parsed.iconColor = resolveColor(parsed.iconColor);
     console.log('intent:', JSON.stringify(parsed));
@@ -253,7 +267,7 @@ slugs 最多3个，从最可能到最不可能排序。例如"微信logo"→{"br
     }],
   });
   try {
-    return JSON.parse(res.choices[0].message.content.trim());
+    return extractJSON(res.choices[0].message.content);
   } catch {
     return null;
   }
@@ -294,8 +308,8 @@ ${files.join('\n')}
 返回JSON，只返回JSON：{"candidates": [{"title": "File:xxx.svg", "description": "简短说明"}]}`,
       }],
     });
-    const parsed = JSON.parse(aiRes.choices[0].message.content.trim());
-    return parsed.candidates ?? [];
+    const parsed = extractJSON(aiRes.choices[0].message.content);
+    return parsed?.candidates ?? [];
   } catch {
     return [];
   }
@@ -435,7 +449,7 @@ async function parseOnlineOptions(userText, selected, intent) {
     }],
   });
   try {
-    const parsed = JSON.parse(res.choices[0].message.content.trim());
+    const parsed = extractJSON(res.choices[0].message.content);
     const rawColor = parsed.color;          // 保留 AI 原始返回值
     parsed.color = resolveColor(rawColor);
     parsed._rawColor = rawColor;            // 传给调用方做判断
@@ -668,7 +682,7 @@ app.post('/webhook', async (req, res) => {
         }],
       });
       let idx = -1;
-      try { idx = JSON.parse(selectRes.choices[0].message.content.trim()).index ?? -1; } catch {}
+      try { idx = (extractJSON(selectRes.choices[0].message.content) ?? {}).index ?? -1; } catch {}
 
       if (idx < 0 || idx >= candidates.length) {
         const reply = await generateReply(
