@@ -98,6 +98,7 @@ ${logoList}${aliasNote}
 【系统能力边界 - 严格遵守】
 支持的格式：SVG、PNG、JPG、WEBP。不支持：PDF、GIF 及其他格式。
 只支持单色替换（一个纯色 hex 值），不支持：渐变、多色、透明度、滤镜、阴影等效果。
+用户说颜色名称（如"红色""蓝色""黑色"）时，直接转换为对应十六进制色号填入 color 字段（如红色→#FF0000、蓝色→#0066FF、黑色→#000000），不需要再询问用户。
 用户请求不支持的格式或效果时，必须在 reply 里如实说明，告知支持什么，询问是否改用支持的方案。
 绝对不能在 reply 里承诺会实现不支持的格式或效果。
 
@@ -385,7 +386,7 @@ async function parseOnlineOptions(userText, selected, intent) {
 返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 512, "format": "png|jpg|webp|svg"}
 - action=confirm：用户接受（包括"好""发吧""默认就行"等）
 - action=cancel：用户取消
-- color：${selected.colorEditable ? '用户指定了则填入，否则null' : '固定null'}
+- color：${selected.colorEditable ? '用户指定了颜色（包括颜色名称如"蓝色""红色"等），必须转换为十六进制色号（如#0066FF），否则填null' : '固定null'}
 - size：默认${selected.maxSize || 512}${selected.maxSize ? `，不超过${selected.maxSize}` : ''}
 - format：默认png`,
     }],
