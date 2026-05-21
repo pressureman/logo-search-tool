@@ -127,6 +127,7 @@ async function parseIntent(userMessage, context = null) {
 
   const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
+    response_format: { type: 'json_object' },
     max_tokens: 500,
     messages: [{
       role: 'user',
@@ -269,6 +270,7 @@ async function generateReply(prompt) {
 async function translateToSearchSlugs(userInput) {
   const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
+    response_format: { type: 'json_object' },
     max_tokens: 150,
     messages: [{
       role: 'user',
@@ -312,6 +314,7 @@ async function searchWikimedia(brandName) {
 
     const aiRes = await callDeepSeek({
       model: 'deepseek-v4-flash',
+      response_format: { type: 'json_object' },
       max_tokens: 200,
       messages: [{
         role: 'user',
@@ -448,6 +451,7 @@ async function processOnlineLogo(selected, intent) {
 async function parseOnlineOptions(userText, selected, intent) {
   const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
+    response_format: { type: 'json_object' },
     max_tokens: 150,
     messages: [{
       role: 'user',
@@ -690,6 +694,7 @@ app.post('/webhook', async (req, res) => {
       const listDesc = candidates.map((c, i) => `${i + 1}=${c.slug}`).join('，');
       const selectRes = await callDeepSeek({
         model: 'deepseek-v4-flash',
+        response_format: { type: 'json_object' },
         max_tokens: 50,
         messages: [{
           role: 'user',
