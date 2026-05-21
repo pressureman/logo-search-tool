@@ -459,14 +459,23 @@ async function downloadAndAskOptions(chatId, candidate, intent) {
   }
 
   const sourceLabel = candidate.source === 'simpleicons' ? 'SimpleIcons' : 'Wikimedia Commons';
+  const userWantsColor = intent.color && HEX_RE.test(intent.color);
 
-  // 颜色是否已确定：不支持改色 或 用户已在初始消息里给了合法颜色
-  const colorReady = !selected.colorEditable || (intent.color && HEX_RE.test(intent.color));
+  // 不支持改色 但用户指定了颜色 → 告知并询问是否要原版
+  if (!selected.colorEditable && userWantsColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，在 ${sourceLabel} 找到了"${candidate.slug}"logo，但这个logo是固定多色版本，不支持改色。用自然语言告知用户，问他要不要原版。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气随意。`
+    );
+    pending.set(chatId, { type: 'online_options', selected, intent: { ...intent, color: null } });
+    await replyText(chatId, reply);
+    return;
+  }
 
-  if (colorReady) {
-    // 用户信息已足够，直接处理，不再追问
+  // 支持改色 且 用户已给合法颜色，或 不支持改色 且 用户没提颜色 → 直接处理
+  if ((selected.colorEditable && userWantsColor) || (!selected.colorEditable && !userWantsColor)) {
     const finalIntent = {
       ...intent,
+      color: selected.colorEditable ? intent.color : null,
       size: intent.size || 512,
       format: intent.format || 'png',
     };
@@ -477,7 +486,7 @@ async function downloadAndAskOptions(chatId, candidate, intent) {
     return;
   }
 
-  // 颜色未指定，需要询问用户
+  // 支持改色 但 颜色未指定 → 询问用户
   const colorDesc = selected.colorEditable ? '支持改色（可指定颜色）' : '固定多色（不支持改色）';
   const sizeDesc = selected.maxSize ? `原图最大 ${selected.maxSize}px` : '矢量图，支持任意尺寸';
   const reply = await generateReply(
