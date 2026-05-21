@@ -199,10 +199,11 @@ async function translateToSearchSlugs(userInput) {
     max_tokens: 150,
     messages: [{
       role: 'user',
-      content: `将以下品牌名转换为 SimpleIcons 的 slug 格式（全小写，去空格和特殊字符）。
-品牌名：「${userInput}」
+      content: `从用户输入中提取品牌名称，转换为 SimpleIcons 的 slug 格式（全小写，去空格和特殊字符）。
+【重要】先去掉"logo"、"图标"、"标志"、"symbol"、"icon"等无关词，只保留品牌名本身。
+用户输入：「${userInput}」
 返回JSON，只返回JSON不要其他文字：{"brandName": "英文品牌名", "slugs": ["slug1", "slug2"]}
-slugs 最多3个，从最可能到最不可能排序。例如"微信"→{"brandName":"WeChat","slugs":["wechat","weixin"]}`,
+slugs 最多3个，从最可能到最不可能排序。例如"微信logo"→{"brandName":"WeChat","slugs":["wechat","weixin"]}`,
     }],
   });
   try {
@@ -272,21 +273,23 @@ function analyzeOnlineSvg(svgText, source) {
   if (/<image[\s>]/i.test(svgText)) {
     return { colorEditable: false, isBitmap: true, colorNodes: [] };
   }
-  // SimpleIcons 规范保证单色
+  // SimpleIcons 规范保证单色，colorNodes 留空表示用根标签注入颜色
   if (source === 'simpleicons') {
-    const colors = [...svgText.matchAll(/fill="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase());
-    const unique = [...new Set(colors.filter(c => c !== '#ffffff' && c !== '#fff'))];
-    return { colorEditable: true, isBitmap: false, colorNodes: unique.length ? unique : ['#000000'] };
+    return { colorEditable: true, isBitmap: false, colorNodes: [] };
   }
   // Wikimedia：先检查渐变/pattern
-  if (/<(linearGradient|radialGradient|pattern)[\s>]/i.test(svgText) || /fill="url\(#/i.test(svgText)) {
+  if (/<(linearGradient|radialGradient|pattern)[\s>]/i.test(svgText) ||
+      /fill="url\(#/i.test(svgText) ||
+      /stroke="url\(#/i.test(svgText)) {
     return { colorEditable: false, isBitmap: false, colorNodes: [] };
   }
-  // 计算有效色值
-  const IGNORE = new Set(['#ffffff', '#fff', '#ffffffff', '#000000', '#000']);
+  // 提取所有色值：属性和 style 内联两种写法
+  const IGNORE = new Set(['#ffffff', '#fff', '#ffffffff']);
   const allColors = [
     ...[...svgText.matchAll(/fill="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase()),
     ...[...svgText.matchAll(/stroke="(#[0-9a-f]{3,6})"/gi)].map(m => m[1].toLowerCase()),
+    ...[...svgText.matchAll(/style="[^"]*fill\s*:\s*(#[0-9a-f]{3,6})/gi)].map(m => m[1].toLowerCase()),
+    ...[...svgText.matchAll(/style="[^"]*stroke\s*:\s*(#[0-9a-f]{3,6})/gi)].map(m => m[1].toLowerCase()),
   ].filter(c => !IGNORE.has(c));
   const unique = [...new Set(allColors)];
   if (unique.length === 1) {
@@ -334,7 +337,12 @@ async function processOnlineLogo(selected, intent) {
   if (fileType === 'svg' && !selected.isBitmap) {
     let svgText = fileBuffer.toString('utf8');
     if (colorEditable && intent.color && HEX_RE.test(intent.color)) {
-      colorNodes.forEach(oldColor => { svgText = swapColor(svgText, oldColor, intent.color); });
+      if (colorNodes.length === 0) {
+        // SimpleIcons 等无显式 fill 的 SVG：直接在根标签注入颜色
+        svgText = svgText.replace(/<svg\b/, `<svg fill="${intent.color}"`);
+      } else {
+        colorNodes.forEach(oldColor => { svgText = swapColor(svgText, oldColor, intent.color); });
+      }
     }
     if (fmt === 'svg') return { buffer: Buffer.from(svgText), ext: 'svg' };
 
