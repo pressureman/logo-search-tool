@@ -654,6 +654,8 @@ app.post('/webhook', async (req, res) => {
 
   res.sendStatus(200);
 
+  if (!event.message?.content) return; // 非消息事件（已读回执、reaction 等），直接忽略
+
   const msgId = event.message?.message_id;
   if (msgId) {
     if (processed.has(msgId)) return;
