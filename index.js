@@ -27,6 +27,29 @@ const processed = new Set();
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
+// 颜色名称 → hex（兜底，不依赖 AI 转换）
+const COLOR_NAME_MAP = {
+  '红': '#FF0000', '红色': '#FF0000', 'red': '#FF0000',
+  '蓝': '#0066FF', '蓝色': '#0066FF', 'blue': '#0066FF',
+  '绿': '#00AA00', '绿色': '#00AA00', 'green': '#00AA00',
+  '黄': '#FFCC00', '黄色': '#FFCC00', 'yellow': '#FFCC00',
+  '橙': '#FF6600', '橙色': '#FF6600', 'orange': '#FF6600',
+  '紫': '#8800CC', '紫色': '#8800CC', 'purple': '#8800CC',
+  '粉': '#FF88CC', '粉色': '#FF88CC', 'pink': '#FF88CC',
+  '白': '#FFFFFF', '白色': '#FFFFFF', 'white': '#FFFFFF',
+  '黑': '#000000', '黑色': '#000000', 'black': '#000000',
+  '灰': '#888888', '灰色': '#888888', 'gray': '#888888', 'grey': '#888888',
+  '金': '#FFD700', '金色': '#FFD700', 'gold': '#FFD700',
+  '棕': '#8B4513', '棕色': '#8B4513', 'brown': '#8B4513',
+};
+
+// 解析颜色：已是合法 hex 直接返回，否则查颜色名映射表
+function resolveColor(raw) {
+  if (!raw) return null;
+  if (HEX_RE.test(raw)) return raw;
+  return COLOR_NAME_MAP[raw.trim().toLowerCase()] ?? null;
+}
+
 // ─── DeepSeek 调用封装（503/429 自动重试）─────────────────────────────────────
 async function callDeepSeek(params, retries = 2, delayMs = 2000) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -138,6 +161,8 @@ ${logoList}${aliasNote}
 
   try {
     const parsed = JSON.parse(res.choices[0].message.content.trim());
+    parsed.color = resolveColor(parsed.color);
+    parsed.iconColor = resolveColor(parsed.iconColor);
     console.log('intent:', JSON.stringify(parsed));
     return parsed;
   } catch {
@@ -410,7 +435,10 @@ async function parseOnlineOptions(userText, selected, intent) {
     }],
   });
   try {
-    return JSON.parse(res.choices[0].message.content.trim());
+    const parsed = JSON.parse(res.choices[0].message.content.trim());
+    parsed.color = resolveColor(parsed.color);
+    console.log('[online_options] parsed:', JSON.stringify(parsed));
+    return parsed;
   } catch {
     return { action: 'confirm', color: null, size: intent.size || 512, format: intent.format || 'png' };
   }
