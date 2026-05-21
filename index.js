@@ -213,13 +213,15 @@ slugs 最多3个，从最可能到最不可能排序。例如"微信"→{"brandN
 }
 
 async function checkSimpleIconsSlugs(slugs) {
+  console.log(`[si] 检查 slugs: ${slugs.join(', ')}，fetch 类型: ${typeof fetch}`);
   const results = await Promise.all(
     slugs.map(async slug => {
       try {
-        // SimpleIcons CDN 不带扩展名，HEAD 可能被拦截用 GET
         const res = await fetch(`https://cdn.simpleicons.org/${slug}`, { method: 'GET' });
+        console.log(`[si] ${slug} → ${res.status}`);
         return res.ok ? slug : null;
-      } catch {
+      } catch (e) {
+        console.log(`[si] ${slug} 异常: ${e.message}`);
         return null;
       }
     })
