@@ -436,11 +436,13 @@ async function parseOnlineOptions(userText, selected, intent) {
   });
   try {
     const parsed = JSON.parse(res.choices[0].message.content.trim());
-    parsed.color = resolveColor(parsed.color);
+    const rawColor = parsed.color;          // 保留 AI 原始返回值
+    parsed.color = resolveColor(rawColor);
+    parsed._rawColor = rawColor;            // 传给调用方做判断
     console.log('[online_options] parsed:', JSON.stringify(parsed));
     return parsed;
   } catch {
-    return { action: 'confirm', color: null, size: intent.size || 512, format: intent.format || 'png' };
+    return { action: 'confirm', color: null, _rawColor: null, size: intent.size || 512, format: intent.format || 'png' };
   }
 }
 
@@ -664,10 +666,19 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // 用户指定了颜色但无法识别（不是合法 hex 且不在颜色名映射表中）
+      if (state.selected.colorEditable && options._rawColor && !options.color) {
+        const reply = await generateReply(
+          `你是logo素材助手，用户想把logo改成"${options._rawColor}"这个颜色，但我没法识别这个颜色名称。用自然语言告知，请用户提供十六进制色号（比如 #FF0000），语气随意，一句话就够。`
+        );
+        await replyText(chatId, reply);
+        return; // 保留 pending 状态，等用户重新输入
+      }
+
       pending.delete(chatId);
       const finalIntent = {
         ...state.intent,
-        color: options.color,
+        color: options.color ?? state.intent.color,
         size: options.size || state.intent.size || 512,
         format: options.format || state.intent.format || 'png',
       };
