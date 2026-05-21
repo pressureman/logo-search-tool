@@ -167,8 +167,7 @@ async function processLogo(intent) {
     fitTo: { mode: 'width', value: intent.size || 512 },
     background: intent.bgColor || undefined,
   });
-  const renderData = await resvg.renderAsync();
-  const pngBuffer = renderData.asPng();
+  const pngBuffer = resvg.render().asPng();
 
   const fmt = intent.format?.toLowerCase();
   if (fmt === 'jpg' || fmt === 'jpeg') {
@@ -342,8 +341,7 @@ async function processOnlineLogo(selected, intent) {
       fitTo: { mode: 'width', value: size },
       background: intent.bgColor || undefined,
     });
-    const renderData = await resvg.renderAsync();
-    const pngBuf = renderData.asPng();
+    const pngBuf = resvg.render().asPng();
 
     if (fmt === 'jpg' || fmt === 'jpeg') {
       return { buffer: await sharp(pngBuf).jpeg({ quality: 95 }).toBuffer(), ext: 'jpg' };
