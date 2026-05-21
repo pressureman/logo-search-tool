@@ -150,6 +150,7 @@ ${logoList}${aliasNote}
   "color": "#RRGGBB或null",
   "iconColor": "#RRGGBB或null",
   "bgColor": "#RRGGBB或null",
+  "colorAmbiguous": false,
   "reply": ""
 }
 
@@ -181,6 +182,7 @@ ${logoList}${aliasNote}
   · 存在问题时 color/iconColor 必须填 null，不能填一个"大概"的颜色去蒙混
   · 如果有多个候选版本，logoId 留空，candidates 填入所有候选 logoId
   · format：用户明确指定了格式才填，否则填 null；size：用户明确指定了尺寸才填数字，否则填 null
+  · 【双色配置logo（如3chat-circle）】color = 背景色（圆的颜色），iconColor = 主体色（图标颜色）。用户明确指定了哪个部分就填哪个；若用户同时提到两个颜色但没说哪个是背景色哪个是主体色，将两个颜色按提及顺序分别填入color和iconColor，并设 colorAmbiguous: true；其他情况 colorAmbiguous 填 false。
   · 【重要】如果用户请求的 logo 不在可用列表中，reply 必须留空，logoId 留空，系统会自动去在线搜索，不要自己说"找不到"`,
     }],
   });
@@ -477,6 +479,69 @@ async function parseOnlineOptions(userText, selected, intent) {
   }
 }
 
+// ─── 双色配置确认 ─────────────────────────────────────────────────────────────
+
+async function parseColorPartsResponse(userText, state) {
+  const { intent, question } = state;
+  const contextDesc = question === 'ambiguous'
+    ? `用户之前提了两个颜色：背景色候选 ${intent.color}、主体色候选 ${intent.iconColor}，机器人问了哪个是背景色哪个是主体色。`
+    : `用户之前提了一个颜色 ${intent.color} 想改背景色（圆），机器人问是只改背景色还是背景色和主体色（图标）都改。如果用户说"都改"或"两个都改"，bgColor 和 iconColor 都填 ${intent.color}；如果说"只改背景色"，iconColor 填 null。`;
+
+  const res = await callDeepSeek({
+    model: 'deepseek-v4-flash',
+    response_format: { type: 'json_object' },
+    max_tokens: 150,
+    messages: [{
+      role: 'user',
+      content: `用户正在确认logo双色配置（背景色=圆，主体色=图标）。${contextDesc}
+用户说：「${userText}」
+返回JSON：{"action": "confirm|cancel", "bgColor": "#RRGGBB或null", "iconColor": "#RRGGBB或null"}
+- action=confirm：用户给出了明确指示；action=cancel：用户取消
+- bgColor：最终背景色hex；iconColor：最终主体色hex；没有指定则填null
+- 颜色名称转hex：红→#FF0000，蓝→#0066FF，绿→#00AA00，黄→#FFCC00，白→#FFFFFF，黑→#000000，橙→#FF6600，紫→#8800CC`,
+    }],
+  });
+  const parsed = extractJSON(res.choices[0].message.content);
+  if (!parsed) return { action: 'confirm', bgColor: intent.color, iconColor: null };
+  parsed.bgColor = resolveColor(parsed.bgColor);
+  parsed.iconColor = resolveColor(parsed.iconColor);
+  console.log('[color_parts_confirm] parsed:', JSON.stringify(parsed));
+  return parsed;
+}
+
+// 检查 colorParts logo 是否需要颜色确认，需要则发消息并设 pending，返回 true；否则返回 false
+async function handleColorPartsConfirm(chatId, intent, logo) {
+  if (!logo.colorParts) return false;
+
+  const hasColor    = !!intent.color;
+  const hasIconColor = !!intent.iconColor;
+
+  // 两个都有且 AI 认为无歧义，或两个都没有 → 直接处理
+  if ((hasColor && hasIconColor && !intent.colorAmbiguous) || (!hasColor && !hasIconColor)) return false;
+
+  // 两个颜色但 AI 不确定对应关系
+  if (intent.colorAmbiguous && hasColor && hasIconColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想改3chat圆形logo的颜色，提到了两个颜色：${intent.color} 和 ${intent.iconColor}，但不清楚哪个是背景色（圆）哪个是主体色（图标）。用自然语言询问用户，语气随意，一句话。`
+    );
+    pending.set(chatId, { type: 'color_parts_confirm', intent, question: 'ambiguous' });
+    await replyText(chatId, reply);
+    return true;
+  }
+
+  // 只指定了一个颜色（背景色），询问是否主体色也一起改
+  if (hasColor && !hasIconColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想改3chat圆形logo，只说了一个颜色 ${intent.color}。默认当作背景色（圆）。用自然语言询问：是只把背景色改成这个颜色、主体色（图标）保持原色，还是背景色和主体色都改成这个颜色？语气随意，一句话。`
+    );
+    pending.set(chatId, { type: 'color_parts_confirm', intent, question: 'one_color' });
+    await replyText(chatId, reply);
+    return true;
+  }
+
+  return false;
+}
+
 // ─── 在线搜索：主流程 ──────────────────────────────────────────────────────────
 
 async function downloadAndAskOptions(chatId, candidate, intent) {
@@ -688,6 +753,27 @@ app.post('/webhook', async (req, res) => {
   try {
     const state = pending.get(chatId);
 
+    // ── 双色配置确认 ──
+    if (state?.type === 'color_parts_confirm') {
+      const parsed = await parseColorPartsResponse(userText, state);
+      if (parsed.action === 'cancel') {
+        pending.delete(chatId);
+        const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
+        await replyText(chatId, reply);
+        return;
+      }
+      pending.delete(chatId);
+      const finalIntent = {
+        ...state.intent,
+        color:     parsed.bgColor    ?? state.intent.color,
+        iconColor: parsed.iconColor  ?? null,
+      };
+      const fileResult = await processLogo(finalIntent);
+      if (!fileResult) throw new Error('logo 文件不存在');
+      await sendLogoToFeishu(chatId, fileResult, finalIntent.logoId);
+      return;
+    }
+
     // ── 在线搜索：用户从多候选中选择 ──
     if (state?.type === 'online_select') {
       const candidates = state.candidates;
@@ -800,16 +886,20 @@ app.post('/webhook', async (req, res) => {
         const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
         await sendZipToFeishu(chatId, zipBuffer, 'logos.zip');
       } else {
-        const fileResult = await processLogo({
+        const mergedIntent = {
           ...state.intent,
           logoId:    intent.selectedId,
           color:     intent.color     ?? state.intent.color,
           iconColor: intent.iconColor ?? state.intent.iconColor,
           size:      intent.size      ?? state.intent.size,
           format:    intent.format    ?? state.intent.format,
-        });
+          colorAmbiguous: intent.colorAmbiguous ?? false,
+        };
+        const selectedLogo = manifest.logos.find(l => l.id === mergedIntent.logoId);
+        if (selectedLogo && await handleColorPartsConfirm(chatId, mergedIntent, selectedLogo)) return;
+        const fileResult = await processLogo(mergedIntent);
         if (!fileResult) throw new Error('logo 文件不存在');
-        await sendLogoToFeishu(chatId, fileResult, intent.selectedId);
+        await sendLogoToFeishu(chatId, fileResult, mergedIntent.logoId);
       }
       return;
     }
@@ -830,6 +920,8 @@ app.post('/webhook', async (req, res) => {
     // 本地找到，直接处理
     if (intent.logoId) {
       pending.delete(chatId);
+      const logo = manifest.logos.find(l => l.id === intent.logoId);
+      if (logo && await handleColorPartsConfirm(chatId, intent, logo)) return;
       const fileResult = await processLogo(intent);
       if (!fileResult) throw new Error('logo 文件不存在');
       await sendLogoToFeishu(chatId, fileResult, intent.logoId);
