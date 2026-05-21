@@ -27,6 +27,24 @@ const processed = new Set();
 
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
+// ─── DeepSeek 调用封装（503/429 自动重试）─────────────────────────────────────
+async function callDeepSeek(params, retries = 2, delayMs = 2000) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await deepseek.chat.completions.create(params);
+    } catch (err) {
+      const status = err?.status ?? err?.response?.status;
+      const retryable = status === 503 || status === 429;
+      if (retryable && attempt < retries) {
+        console.log(`[DeepSeek] ${status} 过载，${delayMs / 1000}s 后重试（第 ${attempt + 1} 次）`);
+        await new Promise(r => setTimeout(r, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // ─── 本地 Logo 意图解析 ────────────────────────────────────────────────────────
 
 async function parseIntent(userMessage, context = null) {
@@ -59,7 +77,7 @@ async function parseIntent(userMessage, context = null) {
     ? `\n【当前对话状态】\n${context}\n用户的回复需要结合此状态理解。\n`
     : '';
 
-  const res = await deepseek.chat.completions.create({
+  const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     max_tokens: 500,
     messages: [{
@@ -188,7 +206,7 @@ async function processLogo(intent) {
 // ─── 在线搜索：工具函数 ────────────────────────────────────────────────────────
 
 async function generateReply(prompt) {
-  const res = await deepseek.chat.completions.create({
+  const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
@@ -197,7 +215,7 @@ async function generateReply(prompt) {
 }
 
 async function translateToSearchSlugs(userInput) {
-  const res = await deepseek.chat.completions.create({
+  const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     max_tokens: 150,
     messages: [{
@@ -240,7 +258,7 @@ async function searchWikimedia(brandName) {
     const files = (data?.query?.search ?? []).map(r => r.title);
     if (!files.length) return [];
 
-    const aiRes = await deepseek.chat.completions.create({
+    const aiRes = await callDeepSeek({
       model: 'deepseek-v4-flash',
       max_tokens: 200,
       messages: [{
@@ -376,7 +394,7 @@ async function processOnlineLogo(selected, intent) {
 }
 
 async function parseOnlineOptions(userText, selected, intent) {
-  const res = await deepseek.chat.completions.create({
+  const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     max_tokens: 150,
     messages: [{
@@ -583,7 +601,7 @@ app.post('/webhook', async (req, res) => {
     if (state?.type === 'online_select') {
       const candidates = state.candidates;
       const listDesc = candidates.map((c, i) => `${i + 1}=${c.slug}`).join('，');
-      const selectRes = await deepseek.chat.completions.create({
+      const selectRes = await callDeepSeek({
         model: 'deepseek-v4-flash',
         max_tokens: 50,
         messages: [{
