@@ -185,9 +185,10 @@ ${logoList}${aliasNote}
   });
 
   const rawContent = res.choices[0].message.content;
+  const finishReason = res.choices[0].finish_reason;
   const parsed = extractJSON(rawContent);
   if (!parsed) {
-    console.error('[parseIntent] JSON提取失败，原始内容:', rawContent);
+    console.error(`[parseIntent] JSON提取失败，finish_reason: ${finishReason}，原始内容:`, rawContent);
     return { action: 'request', reply: '没太理解你的意思，能再说一遍吗~' };
   }
   parsed.color = resolveColor(parsed.color);
