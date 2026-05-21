@@ -145,8 +145,8 @@ ${logoList}${aliasNote}
   "selectedId": "",
   "selectedIds": [],
   "candidates": [],
-  "format": "svg|png|jpg|webp",
-  "size": 512,
+  "format": "svg|png|jpg|webp或null",
+  "size": 数字或null,
   "color": "#RRGGBB或null",
   "iconColor": "#RRGGBB或null",
   "bgColor": "#RRGGBB或null",
@@ -180,7 +180,7 @@ ${logoList}${aliasNote}
     - 有多个候选版本 → 列出选项，candidates 填所有候选 logoId
   · 存在问题时 color/iconColor 必须填 null，不能填一个"大概"的颜色去蒙混
   · 如果有多个候选版本，logoId 留空，candidates 填入所有候选 logoId
-  · format 默认 png，size 默认 512
+  · format：用户明确指定了格式才填，否则填 null；size：用户明确指定了尺寸才填数字，否则填 null
   · 【重要】如果用户请求的 logo 不在可用列表中，reply 必须留空，logoId 留空，系统会自动去在线搜索，不要自己说"找不到"`,
     }],
   });
@@ -457,12 +457,12 @@ async function parseOnlineOptions(userText, selected, intent) {
       role: 'user',
       content: `用户正在确认在线logo的输出参数。${selected.colorEditable ? '支持改色。' : '不支持改色。'}${selected.maxSize ? `最大尺寸${selected.maxSize}px。` : ''}
 用户说：「${userText}」
-返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 512, "format": "png|jpg|webp|svg"}
+返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 数字或null, "format": "png|jpg|webp|svg或null"}
 - action=confirm：用户接受（包括"好""发吧""默认就行"等）
 - action=cancel：用户取消
 - color：${selected.colorEditable ? '用户提到颜色时，能转换为 hex 就填 hex（如"蓝色"→"#0066FF"），不能转换就原样填用户说的颜色词（如"黄绿色"→"黄绿色"）；用户没有提到颜色才填 null' : '固定null'}
-- size：默认${selected.maxSize || 512}${selected.maxSize ? `，不超过${selected.maxSize}` : ''}
-- format：默认png`,
+- size：用户明确指定了尺寸才填数字${selected.maxSize ? `（不超过${selected.maxSize}）` : ''}，否则填 null
+- format：用户明确指定了格式才填，否则填 null`,
     }],
   });
   try {
@@ -787,13 +787,27 @@ app.post('/webhook', async (req, res) => {
       if (selectedIds) {
         const zip = new JSZip();
         for (const logoId of selectedIds) {
-          const fileResult = await processLogo({ ...state.intent, logoId });
+          const fileResult = await processLogo({
+            ...state.intent,
+            logoId,
+            color:     intent.color     ?? state.intent.color,
+            iconColor: intent.iconColor ?? state.intent.iconColor,
+            size:      intent.size      ?? state.intent.size,
+            format:    intent.format    ?? state.intent.format,
+          });
           if (fileResult) zip.file(`${logoId}.${fileResult.ext}`, fileResult.buffer);
         }
         const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
         await sendZipToFeishu(chatId, zipBuffer, 'logos.zip');
       } else {
-        const fileResult = await processLogo({ ...state.intent, logoId: intent.selectedId });
+        const fileResult = await processLogo({
+          ...state.intent,
+          logoId:    intent.selectedId,
+          color:     intent.color     ?? state.intent.color,
+          iconColor: intent.iconColor ?? state.intent.iconColor,
+          size:      intent.size      ?? state.intent.size,
+          format:    intent.format    ?? state.intent.format,
+        });
         if (!fileResult) throw new Error('logo 文件不存在');
         await sendLogoToFeishu(chatId, fileResult, intent.selectedId);
       }
