@@ -460,7 +460,7 @@ async function parseOnlineOptions(userText, selected, intent) {
 返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 512, "format": "png|jpg|webp|svg"}
 - action=confirm：用户接受（包括"好""发吧""默认就行"等）
 - action=cancel：用户取消
-- color：${selected.colorEditable ? '用户指定了颜色（包括颜色名称如"蓝色""红色"等），必须转换为十六进制色号（如#0066FF），否则填null' : '固定null'}
+- color：${selected.colorEditable ? '用户提到颜色时，能转换为 hex 就填 hex（如"蓝色"→"#0066FF"），不能转换就原样填用户说的颜色词（如"黄绿色"→"黄绿色"）；用户没有提到颜色才填 null' : '固定null'}
 - size：默认${selected.maxSize || 512}${selected.maxSize ? `，不超过${selected.maxSize}` : ''}
 - format：默认png`,
     }],
