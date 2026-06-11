@@ -937,7 +937,347 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-app.get('/', (req, res) => res.sendStatus(200));
+// ─── Web 聊天接口 ──────────────────────────────────────────────────────────────
+
+// Web 版：不调用飞书，直接把回复收集进 responses 数组
+// responses 元素格式：{ type: 'text'|'image', data: string, ext?: string, source?: string }
+
+async function webHandleColorPartsConfirm(sessionId, intent, logo, responses) {
+  if (!logo.colorParts) return false;
+
+  const hasColor     = !!intent.color;
+  const hasIconColor = !!intent.iconColor;
+
+  if ((hasColor && hasIconColor && !intent.colorAmbiguous) || (!hasColor && !hasIconColor)) return false;
+
+  if (intent.colorAmbiguous && hasColor && hasIconColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想改3chat圆形logo的颜色，提到了两个颜色：${intent.color} 和 ${intent.iconColor}，但不清楚哪个是背景色（圆）哪个是主体色（图标）。用自然语言询问用户，语气随意，一句话。`
+    );
+    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'ambiguous' });
+    responses.push({ type: 'text', data: reply });
+    return true;
+  }
+
+  if (hasColor && !hasIconColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想改3chat圆形logo，只说了一个颜色 ${intent.color}。默认当作背景色（圆）。用自然语言询问：是只把背景色改成这个颜色、主体色（图标）保持原色，还是背景色和主体色都改成这个颜色？语气随意，一句话。`
+    );
+    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'one_color' });
+    responses.push({ type: 'text', data: reply });
+    return true;
+  }
+
+  return false;
+}
+
+async function webDownloadAndAskOptions(sessionId, candidate, intent, responses) {
+  let selected;
+  try {
+    selected = await downloadAndAnalyze(candidate);
+  } catch (err) {
+    console.error('下载失败', err);
+    const reply = await generateReply(`你是logo素材助手，在线找到了logo但下载失败了。自然地告知用户，建议稍后再试或换个说法。`);
+    responses.push({ type: 'text', data: reply });
+    return;
+  }
+
+  const sourceLabel = candidate.source === 'simpleicons' ? 'Simple Icons' : 'Wikimedia Commons';
+  const userWantsColor = intent.color && HEX_RE.test(intent.color);
+
+  if (!selected.colorEditable && userWantsColor) {
+    const reply = await generateReply(
+      `你是logo素材助手，在 ${sourceLabel} 找到了"${candidate.slug}"logo，但这个logo是固定多色版本，不支持改色。用自然语言告知用户，问他要不要原版。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气随意。`
+    );
+    pending.set(sessionId, { type: 'online_options', selected, intent: { ...intent, color: null } });
+    responses.push({ type: 'text', data: reply });
+    return;
+  }
+
+  if ((selected.colorEditable && userWantsColor) || (!selected.colorEditable && !userWantsColor)) {
+    const finalIntent = {
+      ...intent,
+      color: selected.colorEditable ? intent.color : null,
+      size: intent.size || 512,
+      format: intent.format || 'png',
+    };
+    responses.push({ type: 'text', data: `此素材来自 ${sourceLabel}，非公司内部素材库` });
+    const fileResult = await processOnlineLogo(selected, finalIntent);
+    responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: sourceLabel });
+    return;
+  }
+
+  const colorDesc = selected.colorEditable ? '支持改色（可指定颜色）' : '固定多色（不支持改色）';
+  const sizeDesc = selected.maxSize ? `原图最大 ${selected.maxSize}px` : '矢量图，支持任意尺寸';
+  const reply = await generateReply(
+    `你是logo素材助手，在 ${sourceLabel} 找到了用户想要的"${candidate.slug}"logo。${colorDesc}，${sizeDesc}，默认发 PNG。用自然语言询问用户是否需要指定颜色/尺寸/格式，或直接按默认发送。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气自然随意，不要感叹号。`
+  );
+  pending.set(sessionId, { type: 'online_options', selected, intent });
+  responses.push({ type: 'text', data: reply });
+}
+
+async function webSearchOnlineAndReply(sessionId, userInput, intent, responses) {
+  const searchInput = intent.brandHint || userInput;
+
+  let translated = await translateToSearchSlugs(searchInput);
+  if (!translated) {
+    console.log(`[在线搜索] translateToSearchSlugs 返回 null，重试一次（input: ${searchInput}）`);
+    translated = await translateToSearchSlugs(searchInput);
+  }
+  if (!translated) {
+    const reply = await generateReply(`你是logo素材助手，本地库没找到用户要的logo，在线翻译也失败了。自然地告知找不到，建议换个说法。`);
+    responses.push({ type: 'text', data: reply });
+    return;
+  }
+
+  const { brandName, slugs } = translated;
+  console.log(`[web] 在线搜索：${searchInput} → ${brandName}，slugs: ${slugs.join(', ')}`);
+
+  const foundSlugs = await checkSimpleIconsSlugs(slugs);
+  let candidates = foundSlugs.map(slug => ({
+    slug,
+    source: 'simpleicons',
+    svgUrl: `${SI_BASE}/${slug}.svg`,
+    fileType: 'svg',
+    description: `${slug}（Simple Icons）`,
+  }));
+
+  if (candidates.length === 0) {
+    const wikiCandidates = await searchWikimedia(brandName);
+    for (const c of wikiCandidates) {
+      const fileInfo = await getWikimediaFileUrl(c.title);
+      if (!fileInfo) continue;
+      const rawExt = fileInfo.url.split('.').pop().toLowerCase().split('?')[0];
+      const extMap = { jpeg: 'jpg', jpg: 'jpg', png: 'png', webp: 'webp', svg: 'svg' };
+      const fileType = extMap[rawExt] ?? null;
+      if (!fileType) continue;
+      candidates.push({
+        slug: c.title.replace('File:', ''),
+        source: 'wikimedia',
+        svgUrl: fileInfo.url,
+        fileType,
+        description: `${c.title.replace('File:', '')}（Wikimedia，${c.description}）`,
+      });
+    }
+  }
+
+  if (candidates.length === 0) {
+    const reply = await generateReply(
+      `你是logo素材助手，用户想要"${userInput}"的logo，本地库、Simple Icons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
+    );
+    responses.push({ type: 'text', data: reply });
+    return;
+  }
+
+  if (candidates.length === 1) {
+    await webDownloadAndAskOptions(sessionId, candidates[0], intent, responses);
+    return;
+  }
+
+  const candidateDesc = candidates.map((c, i) => `${i + 1}. ${c.description}`).join('；');
+  const reply = await generateReply(
+    `你是logo素材助手，在线找到"${brandName}"有${candidates.length}个版本：${candidateDesc}。用自然语言列出让用户选一个，语气随意。`
+  );
+  pending.set(sessionId, { type: 'online_select', candidates, intent });
+  responses.push({ type: 'text', data: reply });
+}
+
+app.post('/chat', async (req, res) => {
+  const { message, sessionId } = req.body;
+  if (!message || !sessionId) return res.status(400).json({ error: '缺少 message 或 sessionId' });
+
+  const responses = [];
+
+  try {
+    const state = pending.get(sessionId);
+
+    // ── 双色配置确认 ──
+    if (state?.type === 'color_parts_confirm') {
+      const parsed = await parseColorPartsResponse(message, state);
+      if (parsed.action === 'cancel') {
+        pending.delete(sessionId);
+        const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      }
+      pending.delete(sessionId);
+      const finalIntent = {
+        ...state.intent,
+        color:     parsed.bgColor    ?? state.intent.color,
+        iconColor: parsed.iconColor  ?? null,
+      };
+      const fileResult = await processLogo(finalIntent);
+      if (!fileResult) throw new Error('logo 文件不存在');
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      return res.json(responses);
+    }
+
+    // ── 在线搜索：用户从多候选中选择 ──
+    if (state?.type === 'online_select') {
+      const candidates = state.candidates;
+      const listDesc = candidates.map((c, i) => `${i + 1}=${c.slug}`).join('，');
+      const selectRes = await callDeepSeek({
+        model: 'deepseek-v4-flash',
+        response_format: { type: 'json_object' },
+        max_tokens: 50,
+        messages: [{
+          role: 'user',
+          content: `候选列表：${listDesc}。用户说「${message}」，选的是第几个（0-based index）？返回JSON：{"index": 0}，不确定则返回{"index": -1}`,
+        }],
+      });
+      let idx = -1;
+      try { idx = (extractJSON(selectRes.choices[0].message.content) ?? {}).index ?? -1; } catch {}
+
+      if (idx < 0 || idx >= candidates.length) {
+        const reply = await generateReply(
+          `你是logo素材助手，用户需要从${candidates.length}个版本里选一个，但没听清楚选了哪个。自然地再问一次。`
+        );
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      }
+
+      pending.delete(sessionId);
+      await webDownloadAndAskOptions(sessionId, candidates[idx], state.intent, responses);
+      return res.json(responses);
+    }
+
+    // ── 在线搜索：用户确认参数选项 ──
+    if (state?.type === 'online_options') {
+      const options = await parseOnlineOptions(message, state.selected, state.intent);
+
+      if (options.action === 'cancel') {
+        pending.delete(sessionId);
+        const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      }
+
+      if (state.selected.colorEditable && options._rawColor && !options.color) {
+        const reply = await generateReply(
+          `你是logo素材助手，用户想把logo改成"${options._rawColor}"这个颜色，但我没法识别这个颜色名称。用自然语言告知，请用户提供十六进制色号（比如 #FF0000），语气随意，一句话就够。`
+        );
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      }
+
+      pending.delete(sessionId);
+      const sourceLabel = state.selected.source === 'simpleicons' ? 'Simple Icons' : 'Wikimedia Commons';
+      const finalIntent = {
+        ...state.intent,
+        color: options.color ?? state.intent.color,
+        size: options.size || state.intent.size || 512,
+        format: options.format || state.intent.format || 'png',
+      };
+      const fileResult = await processOnlineLogo(state.selected, finalIntent);
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: sourceLabel });
+      return res.json(responses);
+    }
+
+    // ── 构造本地上下文 ──
+    let context = null;
+    if (state?.type === 'confirm') {
+      context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
+    } else if (state?.type === 'select') {
+      const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
+      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
+    }
+
+    const intent = await parseIntent(message, context);
+    const { action, reply } = intent;
+
+    if (action === 'offTopic' || action === 'cancel') {
+      pending.delete(sessionId);
+      if (reply) responses.push({ type: 'text', data: reply });
+      return res.json(responses);
+    }
+
+    if (action === 'confirm' && state?.type === 'confirm') {
+      pending.delete(sessionId);
+      const stripped = { ...state.intent, color: null, iconColor: null };
+      if (!stripped.logoId) {
+        responses.push({ type: 'text', data: '没找到对应的logo，能再说一下你要哪个~' });
+        return res.json(responses);
+      }
+      const fileResult = await processLogo(stripped);
+      if (!fileResult) throw new Error('logo 文件不存在');
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      return res.json(responses);
+    }
+
+    if (action === 'select' && state?.type === 'select') {
+      pending.delete(sessionId);
+      const selectedIds = intent.selectedIds?.length > 1 ? intent.selectedIds : null;
+      if (selectedIds) {
+        for (const logoId of selectedIds) {
+          const fileResult = await processLogo({
+            ...state.intent,
+            logoId,
+            color:     intent.color     ?? state.intent.color,
+            iconColor: intent.iconColor ?? state.intent.iconColor,
+            size:      intent.size      ?? state.intent.size,
+            format:    intent.format    ?? state.intent.format,
+          });
+          if (fileResult) {
+            responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库', name: logoId });
+          }
+        }
+      } else {
+        const mergedIntent = {
+          ...state.intent,
+          logoId:    intent.selectedId,
+          color:     intent.color     ?? state.intent.color,
+          iconColor: intent.iconColor ?? state.intent.iconColor,
+          size:      intent.size      ?? state.intent.size,
+          format:    intent.format    ?? state.intent.format,
+          colorAmbiguous: intent.colorAmbiguous ?? false,
+        };
+        const selectedLogo = manifest.logos.find(l => l.id === mergedIntent.logoId);
+        if (selectedLogo && await webHandleColorPartsConfirm(sessionId, mergedIntent, selectedLogo, responses)) {
+          return res.json(responses);
+        }
+        const fileResult = await processLogo(mergedIntent);
+        if (!fileResult) throw new Error('logo 文件不存在');
+        responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      }
+      return res.json(responses);
+    }
+
+    // action === 'request'
+    if (reply) {
+      const hasCandidates = intent.candidates?.length > 1;
+      if (hasCandidates || intent.logoId) {
+        const type = hasCandidates ? 'select' : 'confirm';
+        pending.set(sessionId, { type, intent, candidates: intent.candidates ?? [] });
+      } else {
+        pending.delete(sessionId);
+      }
+      responses.push({ type: 'text', data: reply });
+      return res.json(responses);
+    }
+
+    if (intent.logoId) {
+      pending.delete(sessionId);
+      const logo = manifest.logos.find(l => l.id === intent.logoId);
+      if (logo && await webHandleColorPartsConfirm(sessionId, intent, logo, responses)) {
+        return res.json(responses);
+      }
+      const fileResult = await processLogo(intent);
+      if (!fileResult) throw new Error('logo 文件不存在');
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      return res.json(responses);
+    }
+
+    // 本地未找到 → 触发在线搜索
+    await webSearchOnlineAndReply(sessionId, message, intent, responses);
+    return res.json(responses);
+
+  } catch (err) {
+    console.error('[/chat]', err);
+    return res.json([{ type: 'text', data: '出了点问题，稍后再试试吧~' }]);
+  }
+});
+
+app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
 
 const PORT = process.env.PORT || 3000;
 console.log('准备监听端口:', PORT);
