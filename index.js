@@ -954,8 +954,8 @@ async function webHandleColorPartsConfirm(sessionId, intent, logo, responses) {
     const reply = await generateReply(
       `你是logo素材助手，用户想改3chat圆形logo的颜色，提到了两个颜色：${intent.color} 和 ${intent.iconColor}，但不清楚哪个是背景色（圆）哪个是主体色（图标）。用自然语言询问用户，语气随意，一句话。`
     );
-    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'ambiguous' });
     responses.push({ type: 'text', data: reply });
+    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'ambiguous' });
     return true;
   }
 
@@ -963,8 +963,8 @@ async function webHandleColorPartsConfirm(sessionId, intent, logo, responses) {
     const reply = await generateReply(
       `你是logo素材助手，用户想改3chat圆形logo，只说了一个颜色 ${intent.color}。默认当作背景色（圆）。用自然语言询问：是只把背景色改成这个颜色、主体色（图标）保持原色，还是背景色和主体色都改成这个颜色？语气随意，一句话。`
     );
-    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'one_color' });
     responses.push({ type: 'text', data: reply });
+    pending.set(sessionId, { type: 'color_parts_confirm', intent, question: 'one_color' });
     return true;
   }
 
@@ -989,8 +989,8 @@ async function webDownloadAndAskOptions(sessionId, candidate, intent, responses)
     const reply = await generateReply(
       `你是logo素材助手，在 ${sourceLabel} 找到了"${candidate.slug}"logo，但这个logo是固定多色版本，不支持改色。用自然语言告知用户，问他要不要原版。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气随意。`
     );
-    pending.set(sessionId, { type: 'online_options', selected, intent: { ...intent, color: null } });
     responses.push({ type: 'text', data: reply });
+    pending.set(sessionId, { type: 'online_options', selected, intent: { ...intent, color: null } });
     return;
   }
 
@@ -1012,8 +1012,8 @@ async function webDownloadAndAskOptions(sessionId, candidate, intent, responses)
   const reply = await generateReply(
     `你是logo素材助手，在 ${sourceLabel} 找到了用户想要的"${candidate.slug}"logo。${colorDesc}，${sizeDesc}，默认发 PNG。用自然语言询问用户是否需要指定颜色/尺寸/格式，或直接按默认发送。结尾注明「此素材来自 ${sourceLabel}，非公司内部素材库」。语气自然随意，不要感叹号。`
   );
-  pending.set(sessionId, { type: 'online_options', selected, intent });
   responses.push({ type: 'text', data: reply });
+  pending.set(sessionId, { type: 'online_options', selected, intent });
 }
 
 async function webSearchOnlineAndReply(sessionId, userInput, intent, responses) {
@@ -1273,11 +1273,20 @@ app.post('/chat', async (req, res) => {
 
   } catch (err) {
     console.error('[/chat]', err);
+    pending.delete(sessionId);
     return res.json([{ type: 'text', data: '出了点问题，稍后再试试吧~' }]);
   }
 });
 
-app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
+// ─── 静态文件（React 前端）────────────────────────────────────────────────────
+const DIST = `${__dirname}/client/dist`;
+if (fs.existsSync(DIST)) {
+  app.use(express.static(DIST));
+  app.get('/', (req, res) => res.sendFile(`${DIST}/index.html`));
+} else {
+  // 兜底：旧版纯 HTML 页
+  app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
+}
 
 const PORT = process.env.PORT || 3000;
 console.log('准备监听端口:', PORT);
