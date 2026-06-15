@@ -341,4 +341,3 @@ Image.Preview = ImagePreview;
 Image.Zoom = ImageZoom;
 
 export { Image, ImageRoot, ImagePreview, ImageZoom };
-export type { ImageRootProps };
