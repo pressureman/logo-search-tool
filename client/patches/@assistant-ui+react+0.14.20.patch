@@ -1,0 +1,20 @@
+diff --git a/node_modules/@assistant-ui/react/dist/context/react/utils/createContextStoreHook.js b/node_modules/@assistant-ui/react/dist/context/react/utils/createContextStoreHook.js
+index 638cd47..ffd940d 100644
+--- a/node_modules/@assistant-ui/react/dist/context/react/utils/createContextStoreHook.js
++++ b/node_modules/@assistant-ui/react/dist/context/react/utils/createContextStoreHook.js
+@@ -29,14 +29,7 @@ function createContextStoreHook(contextHook, contextKey) {
+ 		} else t0 = $[1];
+ 		const store = useStoreStoreHook(t0);
+ 		if (!store) return null;
+-		let t1;
+-		if ($[2] !== selector || $[3] !== store) {
+-			t1 = selector ? store(selector) : store();
+-			$[2] = selector;
+-			$[3] = store;
+-			$[4] = t1;
+-		} else t1 = $[4];
+-		return t1;
++		return selector ? store(selector) : store();
+ 	}
+ 	return {
+ 		[contextKey]: useStoreHook,

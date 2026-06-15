@@ -95,7 +95,7 @@ async function callDeepSeek(params, retries = 2, delayMs = 2000) {
 
 // ─── 本地 Logo 意图解析 ────────────────────────────────────────────────────────
 
-async function parseIntent(userMessage, context = null) {
+async function parseIntent(userMessage, context = null, history = []) {
   const logoList = manifest.logos
     .map(l => {
       const colorNote = l.colorParts
@@ -125,11 +125,15 @@ async function parseIntent(userMessage, context = null) {
     ? `\n【当前对话状态】\n${context}\n用户的回复需要结合此状态理解。\n`
     : '';
 
+  const historyMessages = history
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: String(m.content) }));
+
   const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     response_format: { type: 'json_object' },
-    max_tokens: 500,
-    messages: [{
+    max_tokens: 1000,
+    messages: [...historyMessages, {
       role: 'user',
       content: `你是公司内部的logo素材助手，说话自然随意，像靠谱的同事。${contextSection}
 用户说：「${userMessage}」
@@ -842,7 +846,8 @@ app.post('/webhook', async (req, res) => {
       context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
     } else if (state?.type === 'select') {
       const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
-      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
+      const mapping = state.candidates.map((id, i) => `第${i + 1}个=${id}`).join('，');
+      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（${mapping}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
     }
 
     const intent = await parseIntent(userText, context);
@@ -910,7 +915,8 @@ app.post('/webhook', async (req, res) => {
       if (hasCandidates || intent.logoId) {
         const type = hasCandidates ? 'select' : 'confirm';
         pending.set(chatId, { type, intent, candidates: intent.candidates ?? [] });
-      } else {
+      } else if (!state) {
+        // 只有没有待处理状态时才清除，避免解析失败清掉 select/confirm 状态
         pending.delete(chatId);
       }
       await replyText(chatId, reply);
@@ -1083,7 +1089,7 @@ async function webSearchOnlineAndReply(sessionId, userInput, intent, responses) 
 }
 
 app.post('/chat', async (req, res) => {
-  const { message, sessionId } = req.body;
+  const { message, sessionId, history = [] } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: '缺少 message 或 sessionId' });
 
   const responses = [];
@@ -1179,10 +1185,11 @@ app.post('/chat', async (req, res) => {
       context = `机器人刚才告知用户"${state.intent.logoId}"这个logo有问题（如不支持改色），询问是否需要原版，正在等待用户确认。用户任何表示同意的回复（包括"要""好""行""发吧""可以""ok"等）action 返回 confirm；拒绝或取消则返回 cancel。`;
     } else if (state?.type === 'select') {
       const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
-      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（第1个=${state.candidates[0]}，第2个=${state.candidates[1] ?? ''}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
+      const mapping = state.candidates.map((id, i) => `第${i + 1}个=${id}`).join('，');
+      context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（${mapping}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
     }
 
-    const intent = await parseIntent(message, context);
+    const intent = await parseIntent(message, context, history);
     const { action, reply } = intent;
 
     if (action === 'offTopic' || action === 'cancel') {
@@ -1208,6 +1215,7 @@ app.post('/chat', async (req, res) => {
       pending.delete(sessionId);
       const selectedIds = intent.selectedIds?.length > 1 ? intent.selectedIds : null;
       if (selectedIds) {
+        const zip = new JSZip();
         for (const logoId of selectedIds) {
           const fileResult = await processLogo({
             ...state.intent,
@@ -1217,10 +1225,10 @@ app.post('/chat', async (req, res) => {
             size:      intent.size      ?? state.intent.size,
             format:    intent.format    ?? state.intent.format,
           });
-          if (fileResult) {
-            responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库', name: logoId });
-          }
+          if (fileResult) zip.file(`${logoId}.${fileResult.ext}`, fileResult.buffer);
         }
+        const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+        responses.push({ type: 'file', data: zipBuffer.toString('base64'), ext: 'zip', name: 'logos.zip', mimeType: 'application/zip', source: '本地库' });
       } else {
         const mergedIntent = {
           ...state.intent,
@@ -1248,7 +1256,7 @@ app.post('/chat', async (req, res) => {
       if (hasCandidates || intent.logoId) {
         const type = hasCandidates ? 'select' : 'confirm';
         pending.set(sessionId, { type, intent, candidates: intent.candidates ?? [] });
-      } else {
+      } else if (!state) {
         pending.delete(sessionId);
       }
       responses.push({ type: 'text', data: reply });
