@@ -44,7 +44,7 @@ const titleGenerator = {
 
 type ApiItem =
   | { type: "text"; data: string }
-  | { type: "image"; data: string; ext?: string }
+  | { type: "image"; data: string; ext?: string; name?: string }
   | { type: "file"; data: string; ext?: string; name?: string; mimeType?: string };
 
 // ── ChatModelAdapter ──────────────────────────────────────────────────────────
@@ -58,17 +58,23 @@ const logoBotAdapter: ChatModelAdapter = {
     const firstUser = messages.find((m) => m.role === "user");
     const sessionId = firstUser?.id ?? crypto.randomUUID();
 
-    // Build text-only history from prior messages (exclude current user turn)
+    // Build history from prior messages (exclude current user turn).
+    // For assistant messages that are pure image/file (no text), inject "[已发送logo]"
+    // so the LLM knows the previous request was fulfilled and "谷歌" after "微信" is a new request.
     const history = messages
       .slice(0, -1)
       .slice(-6)
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content
+      .map((m) => {
+        const textContent = m.content
           .filter((c) => c.type === "text")
           .map((c) => (c as { type: "text"; text: string }).text)
-          .join(""),
-      }))
+          .join("");
+        const hasMedia =
+          m.role === "assistant" &&
+          m.content.some((c) => c.type === "image" || c.type === "file");
+        const content = textContent || (hasMedia ? "[已发送logo]" : "");
+        return { role: m.role as "user" | "assistant", content };
+      })
       .filter((m) => m.content.length > 0);
 
     const resp = await fetch("/chat", {
@@ -85,7 +91,7 @@ const logoBotAdapter: ChatModelAdapter = {
       if (item.type === "text") return [{ type: "text" as const, text: item.data }];
       if (item.type === "image") {
         const mime = item.ext === "svg" ? "image/svg+xml" : `image/${item.ext ?? "png"}`;
-        return [{ type: "image" as const, image: `data:${mime};base64,${item.data}` }];
+        return [{ type: "image" as const, image: `data:${mime};base64,${item.data}`, filename: item.name }];
       }
       if (item.type === "file") {
         const mime = item.mimeType ?? "application/octet-stream";

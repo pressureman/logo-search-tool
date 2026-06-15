@@ -155,10 +155,12 @@ ${logoList}${aliasNote}
   "iconColor": "#RRGGBB或null",
   "bgColor": "#RRGGBB或null",
   "colorAmbiguous": false,
+  "isNewRequest": false,
   "reply": ""
 }
 
 各字段说明：
+- isNewRequest：当前消息是否是全新的logo请求（与上一次请求的品牌明显不同）。判断规则：若历史记录中出现过"[已发送logo]"（代表上一次已交付），且当前用户请求的品牌与上一次不同，则设为 true；若是对上一次结果的追问（改格式/改颜色/改尺寸/确认/选择），则设为 false；若历史中没有已交付记录，则设为 false。
 - brandHint：当 logoId 为空时（本地库没有该logo），填入用户意图中的品牌名称，只保留品牌名，去掉"logo""图标""svg""png""webp""jpg"等格式词和颜色词及动词；若 logoId 已有值则留空。
 - action：
   · request：用户在请求logo（新请求或重新请求）
@@ -1009,7 +1011,7 @@ async function webDownloadAndAskOptions(sessionId, candidate, intent, responses)
     };
     responses.push({ type: 'text', data: `此素材来自 ${sourceLabel}，非公司内部素材库` });
     const fileResult = await processOnlineLogo(selected, finalIntent);
-    responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: sourceLabel });
+    responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${candidate.slug}.${fileResult.ext}`, source: sourceLabel });
     return;
   }
 
@@ -1114,7 +1116,7 @@ app.post('/chat', async (req, res) => {
       };
       const fileResult = await processLogo(finalIntent);
       if (!fileResult) throw new Error('logo 文件不存在');
-      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${finalIntent.logoId}.${fileResult.ext}`, source: '本地库' });
       return res.json(responses);
     }
 
@@ -1175,7 +1177,7 @@ app.post('/chat', async (req, res) => {
         format: options.format || state.intent.format || 'png',
       };
       const fileResult = await processOnlineLogo(state.selected, finalIntent);
-      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: sourceLabel });
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${state.selected.slug}.${fileResult.ext}`, source: sourceLabel });
       return res.json(responses);
     }
 
@@ -1191,6 +1193,11 @@ app.post('/chat', async (req, res) => {
 
     const intent = await parseIntent(message, context, history);
     const { action, reply } = intent;
+
+    // 如果 LLM 判断这是全新品牌请求，清除旧 session 状态避免污染
+    if (intent.isNewRequest && state) {
+      pending.delete(sessionId);
+    }
 
     if (action === 'offTopic' || action === 'cancel') {
       pending.delete(sessionId);
@@ -1245,7 +1252,7 @@ app.post('/chat', async (req, res) => {
         }
         const fileResult = await processLogo(mergedIntent);
         if (!fileResult) throw new Error('logo 文件不存在');
-        responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+        responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${mergedIntent.logoId}.${fileResult.ext}`, source: '本地库' });
       }
       return res.json(responses);
     }
@@ -1271,7 +1278,7 @@ app.post('/chat', async (req, res) => {
       }
       const fileResult = await processLogo(intent);
       if (!fileResult) throw new Error('logo 文件不存在');
-      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, source: '本地库' });
+      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${intent.logoId}.${fileResult.ext}`, source: '本地库' });
       return res.json(responses);
     }
 
