@@ -149,9 +149,7 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
           >
             <ThreadScrollToBottom />
             <Composer />
-            <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
-              <ThreadSuggestions />
-            </AuiIf>
+            <ThreadSuggestionsContainer />
           </ThreadPrimitive.ViewportFooter>
         </div>
       </ThreadPrimitive.Viewport>
@@ -194,6 +192,22 @@ const ThreadWelcome: FC = () => {
   );
 };
 
+const ThreadSuggestionsContainer: FC = () => {
+  const visible = useAuiState((s) => isNewChatView(s));
+  const composing = useAuiState((s) => !s.composer.isEmpty);
+  if (!visible) return null;
+  return (
+    <div
+      className={cn(
+        "transition-opacity duration-150",
+        composing ? "pointer-events-none opacity-0" : "opacity-100",
+      )}
+    >
+      <ThreadSuggestions />
+    </div>
+  );
+};
+
 const ThreadSuggestions: FC = () => {
   return (
     <div className="aui-thread-welcome-suggestions flex w-full flex-wrap items-center justify-center gap-2 px-4">
@@ -231,7 +245,7 @@ const Composer: FC = () => {
           <ComposerAttachments />
           <ComposerPrimitive.Input
             placeholder="Send a message..."
-            className="aui-composer-input placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base outline-none"
+            className="aui-composer-input placeholder:text-muted-foreground/80 max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-2.5 text-sm leading-5 outline-none"
             rows={1}
             autoFocus
             aria-label="Message input"
