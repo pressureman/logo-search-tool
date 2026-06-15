@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "cd client && npm install && npm run build",
+    "build": "cd client && rm -f package-lock.json && npm install && npm run build",
     "start": "node index.js",
     "dev": "export $(cat .env | xargs) && concurrently \"node index.js\" \"cd client && npm run dev\""
   },

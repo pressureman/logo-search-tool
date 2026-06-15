@@ -31,17 +31,6 @@
     "tw-shimmer": "^0.4.11",
     "zustand": "^5.0.14"
   },
-  "optionalDependencies": {
-    "@rolldown/binding-linux-x64-gnu": "1.0.3",
-    "@rolldown/binding-linux-x64-musl": "1.0.3",
-    "@rolldown/binding-linux-arm64-gnu": "1.0.3",
-    "lightningcss-linux-x64-gnu": "1.32.0",
-    "lightningcss-linux-x64-musl": "1.32.0",
-    "lightningcss-linux-arm64-gnu": "1.32.0",
-    "@tailwindcss/oxide-linux-x64-gnu": "4.3.0",
-    "@tailwindcss/oxide-linux-x64-musl": "4.3.0",
-    "@tailwindcss/oxide-linux-arm64-gnu": "4.3.0"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
