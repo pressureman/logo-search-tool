@@ -4,6 +4,7 @@ import {
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { File } from "@/components/assistant-ui/file";
+import { Image } from "@/components/assistant-ui/image";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
   Reasoning,
@@ -31,7 +32,6 @@ import {
   ComposerPrimitive,
   ErrorPrimitive,
   groupPartByType,
-  MessagePartPrimitive,
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
@@ -390,12 +390,7 @@ const AssistantMessage: FC = () => {
               case "text":
                 return <MarkdownText />;
               case "image":
-                return (
-                  <MessagePartPrimitive.Image
-                    alt="logo"
-                    className="bg-muted my-2 max-h-80 w-auto rounded-lg border p-2"
-                  />
-                );
+                return <Image {...part} />;
               case "file":
                 return (
                   <div className="my-2">

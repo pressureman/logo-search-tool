@@ -6,14 +6,24 @@ import {
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAuiState,
+  useThreadListItem,
+  useThreadListItemRuntime,
 } from "@assistant-ui/react";
 import {
-  ArchiveIcon,
   MoreHorizontalIcon,
+  PencilIcon,
   PlusIcon,
   TrashIcon,
 } from "lucide-react";
-import { Fragment, useMemo, type FC } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+  type FC,
+} from "react";
 
 export const ThreadList: FC = () => {
   return (
@@ -108,7 +118,7 @@ const ThreadListNew: FC = () => {
         className="aui-thread-list-new hover:bg-muted data-active:bg-muted h-8 justify-start gap-2 rounded-md px-2.5 text-sm font-normal"
       >
         <PlusIcon className="size-4" />
-        New Thread
+        New Chat
       </Button>
     </ThreadListPrimitive.New>
   );
@@ -132,19 +142,59 @@ const ThreadListSkeleton: FC = () => {
 };
 
 const ThreadListItem: FC = () => {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const runtime = useThreadListItemRuntime();
+  const { title } = useThreadListItem();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const startRename = useCallback(() => {
+    setRenameValue(title ?? "");
+    setIsRenaming(true);
+  }, [title]);
+
+  useEffect(() => {
+    if (isRenaming) inputRef.current?.select();
+  }, [isRenaming]);
+
+  const commitRename = useCallback(async () => {
+    const trimmed = renameValue.trim();
+    if (trimmed) await runtime.rename(trimmed);
+    setIsRenaming(false);
+  }, [renameValue, runtime]);
+
+  const cancelRename = useCallback(() => {
+    setIsRenaming(false);
+  }, []);
+
   return (
     <ThreadListItemPrimitive.Root className="aui-thread-list-item group hover:bg-muted focus-visible:bg-muted data-active:bg-muted flex h-8 items-center gap-1 rounded-md transition-colors focus-visible:outline-none">
-      <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center px-2.5 text-start text-sm">
-        <span className="aui-thread-list-item-title min-w-0 flex-1 truncate">
-          <ThreadListItemPrimitive.Title fallback="New Chat" />
-        </span>
-      </ThreadListItemPrimitive.Trigger>
-      <ThreadListItemMore />
+      {isRenaming ? (
+        <input
+          ref={inputRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+            if (e.key === "Escape") cancelRename();
+          }}
+          onBlur={commitRename}
+          className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none"
+          autoFocus
+        />
+      ) : (
+        <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center px-2.5 text-start text-sm">
+          <span className="aui-thread-list-item-title min-w-0 flex-1 truncate">
+            <ThreadListItemPrimitive.Title fallback="New Chat" />
+          </span>
+        </ThreadListItemPrimitive.Trigger>
+      )}
+      {!isRenaming && <ThreadListItemMore onRename={startRename} />}
     </ThreadListItemPrimitive.Root>
   );
 };
 
-const ThreadListItemMore: FC = () => {
+const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
   return (
     <ThreadListItemMorePrimitive.Root>
       <ThreadListItemMorePrimitive.Trigger asChild>
@@ -163,12 +213,13 @@ const ThreadListItemMore: FC = () => {
         sideOffset={6}
         className="aui-thread-list-item-more-content bg-popover/95 text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1.5 shadow-lg backdrop-blur-sm"
       >
-        <ThreadListItemPrimitive.Archive asChild>
-          <ThreadListItemMorePrimitive.Item className="aui-thread-list-item-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">
-            <ArchiveIcon className="size-4" />
-            Archive
-          </ThreadListItemMorePrimitive.Item>
-        </ThreadListItemPrimitive.Archive>
+        <ThreadListItemMorePrimitive.Item
+          className="aui-thread-list-item-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+          onSelect={(e) => { e.preventDefault(); onRename(); }}
+        >
+          <PencilIcon className="size-4" />
+          Rename
+        </ThreadListItemMorePrimitive.Item>
         <ThreadListItemPrimitive.Delete asChild>
           <ThreadListItemMorePrimitive.Item className="aui-thread-list-item-more-item text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">
             <TrashIcon className="size-4" />
