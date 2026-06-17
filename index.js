@@ -680,7 +680,7 @@ async function searchOnlineAndReply(chatId, userInput, intent) {
 
   if (candidates.length === 0) {
     const reply = await generateReply(
-      `你是logo素材助手，用户想要"${userInput}"的logo，本地库、SimpleIcons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
+      `你是logo素材助手，用户想要"${brandName}"的logo，本地库、SimpleIcons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
     );
     await replyText(chatId, reply);
     return;
@@ -1111,7 +1111,7 @@ async function webSearchOnlineAndReply(sessionId, userInput, intent, responses) 
 
   if (candidates.length === 0) {
     const reply = await generateReply(
-      `你是logo素材助手，用户想要"${userInput}"的logo，本地库、Simple Icons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
+      `你是logo素材助手，用户想要"${brandName}"的logo，本地库、Simple Icons 和 Wikimedia Commons 都没找到。自然地告知找不到，可以建议用户提供品牌英文名或官方名称再试试。`
     );
     responses.push({ type: 'text', data: reply });
     return;
@@ -1157,35 +1157,6 @@ app.post('/chat', async (req, res) => {
       const fileResult = await processLogo(finalIntent);
       if (!fileResult) throw new Error('logo 文件不存在');
       responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${finalIntent.logoId}.${fileResult.ext}`, source: '本地库' });
-      return res.json(responses);
-    }
-
-    // ── 在线搜索：用户从多候选中选择 ──
-    if (state?.type === 'online_select') {
-      const candidates = state.candidates;
-      const listDesc = candidates.map((c, i) => `${i + 1}=${c.slug}`).join('，');
-      const selectRes = await callDeepSeek({
-        model: 'deepseek-v4-flash',
-        response_format: { type: 'json_object' },
-        max_tokens: 50,
-        messages: [{
-          role: 'user',
-          content: `候选列表：${listDesc}。用户说「${message}」，选的是第几个（0-based index）？返回JSON：{"index": 0}，不确定则返回{"index": -1}`,
-        }],
-      });
-      let idx = -1;
-      try { idx = (extractJSON(selectRes.choices[0].message.content) ?? {}).index ?? -1; } catch {}
-
-      if (idx < 0 || idx >= candidates.length) {
-        const reply = await generateReply(
-          `你是logo素材助手，用户需要从${candidates.length}个版本里选一个，但没听清楚选了哪个。自然地再问一次。`
-        );
-        responses.push({ type: 'text', data: reply });
-        return res.json(responses);
-      }
-
-      pending.delete(sessionId);
-      await webDownloadAndAskOptions(sessionId, candidates[idx], state.intent, responses);
       return res.json(responses);
     }
 
@@ -1239,6 +1210,10 @@ app.post('/chat', async (req, res) => {
       const list = state.candidates.map((id, i) => `${i + 1}. ${id}`).join('、');
       const mapping = state.candidates.map((id, i) => `第${i + 1}个=${id}`).join('，');
       context = `机器人列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应 logoId（${mapping}）。若用户说"都要""全部""全给我"等，selectedIds 填所有候选 logoId：[${state.candidates.map(id => `"${id}"`).join(', ')}]，selectedId 留空。`;
+    } else if (state?.type === 'online_select') {
+      const list = state.candidates.map((c, i) => `${i + 1}. ${c.slug}`).join('、');
+      const mapping = state.candidates.map((c, i) => `第${i + 1}个=${c.slug}`).join('，');
+      context = `机器人在线列出了多个logo版本：${list}，正在等待用户选择。用户回复数字（"1""1.""第一个"等）或版本名时，action 必须返回 select，selectedId 填对应的 slug（${mapping}）。在线版本一次只能选一个，不支持"都要/全部"。若用户改口要别的品牌或logo，action 返回 request；不要了返回 cancel。`;
     }
 
     const intent = await parseIntent(message, context, history);
@@ -1247,6 +1222,12 @@ app.post('/chat', async (req, res) => {
     // 如果 LLM 判断这是全新品牌请求，清除旧 session 状态避免污染
     if (intent.isNewRequest && state) {
       pending.delete(sessionId);
+    }
+
+    // online_select 下用户不在选择（改口/取消/离题）→ 清掉旧候选，避免污染后续流程
+    if (state?.type === 'online_select' && action !== 'select') {
+      pending.delete(sessionId);
+      state = null;
     }
 
     if (action === 'offTopic' || action === 'cancel') {
@@ -1304,6 +1285,34 @@ app.post('/chat', async (req, res) => {
         if (!fileResult) throw new Error('logo 文件不存在');
         responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${mergedIntent.logoId}.${fileResult.ext}`, source: '本地库' });
       }
+      return res.json(responses);
+    }
+
+    if (action === 'select' && state?.type === 'online_select') {
+      const candidates = state.candidates;
+      // ③ 在线一次只能选一个：多选则保留 pending 重问
+      if (intent.selectedIds?.length > 1) {
+        const reply = await generateReply(
+          `你是logo素材助手，在线版本一次只能选一个，但用户像是想要多个。自然地请用户选其中一个，语气随意，一句话。`
+        );
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      }
+      // ① slug→候选映射，数字兜底（"第一个"/"1"）
+      let picked = candidates.find((c) => c.slug === intent.selectedId);
+      if (!picked) {
+        const m = message.match(/\d+/);
+        if (m) picked = candidates[parseInt(m[0], 10) - 1];
+      }
+      if (!picked) {
+        const reply = await generateReply(
+          `你是logo素材助手，用户需要从${candidates.length}个版本里选一个，但没听清楚选了哪个。自然地再问一次。`
+        );
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses); // 保留 pending
+      }
+      pending.delete(sessionId);
+      await webDownloadAndAskOptions(sessionId, picked, state.intent, responses);
       return res.json(responses);
     }
 
