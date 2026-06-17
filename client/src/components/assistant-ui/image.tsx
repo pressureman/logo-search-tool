@@ -136,15 +136,21 @@ function ImagePreview({
   const loaded = loadedSrc === src;
   const error = errorSrc === src;
 
+  // SVG（如 Simple Icons）只有 viewBox、没有固有宽高，Chromium 会把 naturalWidth 报成 0。
+  // 这类图若 data URI 在 React 挂上 onLoad 前就加载完，会卡在 invisible 永不显示。
+  // 加载失败已由 onError 单独处理（且 error 分支优先渲染），所以这里只需判断 complete。
+  const isSvg = typeof src === "string" && src.startsWith("data:image/svg");
+
   useEffect(() => {
+    const img = imgRef.current;
     if (
       typeof src === "string" &&
-      imgRef.current?.complete &&
-      imgRef.current.naturalWidth > 0
+      img?.complete &&
+      (img.naturalWidth > 0 || isSvg)
     ) {
       setLoadedSrc(src);
     }
-  }, [src]);
+  }, [src, isSvg]);
 
   return (
     <div
@@ -279,14 +285,17 @@ function ImageZoom({ part, alt = "Image preview", onOpenChange, children }: Imag
             aria-label="关闭放大图片"
           >
             <div
-              className="max-h-[90vh] max-w-[90vw]"
+              className="bg-muted fade-in zoom-in-95 animate-in flex items-center justify-center rounded-lg p-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
+              {/* 浅色底卡片：避免黑色 logo 在深色遮罩上「黑底黑图」看不见。
+                  显式给定宽度：Simple Icons 的 SVG 只有 viewBox、没有固有宽高，
+                  不给宽度会被渲染成 0，弹层里就只剩一个空白卡片。 */}
               <img
                 data-slot="image-zoom-content"
                 src={part.image}
                 alt={alt}
-                className="fade-in zoom-in-95 animate-in max-h-[90vh] max-w-[90vw] object-contain duration-200"
+                className="block h-auto w-[min(80vw,32rem)] max-h-[80vh] object-contain"
               />
             </div>
             <DownloadButton

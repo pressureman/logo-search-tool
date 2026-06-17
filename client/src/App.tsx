@@ -1,4 +1,4 @@
-import { type FC } from "react";
+import { useState, type FC } from "react";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
@@ -8,8 +8,16 @@ import {
   type SuggestionAdapter,
 } from "@assistant-ui/react";
 import { createLocalStorageAdapter } from "@assistant-ui/core/react";
+import { MenuIcon } from "lucide-react";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 
 // ── 本地持久化（localStorage） ────────────────────────────────────────────────
 // 每个 thread = 一个 session。线程列表元数据、各线程消息均由
@@ -77,15 +85,39 @@ const logoBotAdapter: ChatModelAdapter = {
       })
       .filter((m) => m.content.length > 0);
 
-    const resp = await fetch("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, sessionId, history }),
-      signal: abortSignal,
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let resp: Response;
+    try {
+      resp = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText, sessionId, history }),
+        signal: abortSignal,
+      });
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      throw new Error(`网络连接失败，请检查网络后重试\n\n错误详情：${raw}`);
+    }
 
-    const items: ApiItem[] = await resp.json();
+    if (!resp.ok) {
+      let friendly = "服务器开小差了，请稍后重试";
+      let detail = `HTTP ${resp.status}`;
+      try {
+        const body = await resp.json();
+        if (body?.error) friendly = body.error;
+        if (body?.detail) detail += ` ${body.detail}`;
+      } catch {
+        // 响应体非 JSON，保留 HTTP 状态码即可
+      }
+      throw new Error(`${friendly}\n\n错误详情：${detail}`);
+    }
+
+    let items: ApiItem[];
+    try {
+      items = await resp.json();
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      throw new Error(`返回内容解析失败，请稍后重试\n\n错误详情：${raw}`);
+    }
     type Part = NonNullable<ChatModelRunResult["content"]>[number];
     const parts: Part[] = items.flatMap((item): Part[] => {
       if (item.type === "text") return [{ type: "text" as const, text: item.data }];
@@ -160,6 +192,55 @@ function LogoBotRuntimeProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── 侧边栏内容（桌面侧栏 / 移动抽屉共用） ──────────────────────────────────────
+
+// onNavigate：点击「新对话」或某个线程后回调（移动端用来收起抽屉）
+const SidebarNav: FC<{ onNavigate?: () => void }> = ({ onNavigate }) => (
+  <div
+    className="flex min-h-0 flex-1 flex-col"
+    onClickCapture={(e) => {
+      // 捕获阶段处理，避免 assistant-ui 在线程入口 stopPropagation 后收不到事件。
+      // 只有点到「新建对话」或线程入口才收起抽屉，重命名/删除等操作保持打开。
+      if (!onNavigate) return;
+      const el = e.target as HTMLElement;
+      if (el.closest(".aui-thread-list-new, .aui-thread-list-item-trigger")) {
+        onNavigate();
+      }
+    }}
+  >
+    <div className="mb-3 flex items-center gap-2 px-2.5">
+      <img src="/favicon.svg" alt="Logoman" className="size-6 object-contain" />
+      <span className="text-sm font-semibold">Logoman</span>
+    </div>
+    <ThreadList />
+  </div>
+);
+
+// ── 移动端顶栏 + 抽屉 ──────────────────────────────────────────────────────────
+
+const MobileTopBar: FC = () => {
+  const [open, setOpen] = useState(false);
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-2 md:hidden">
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-9" aria-label="打开菜单">
+            <MenuIcon className="size-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="px-2 py-3">
+          <SheetTitle className="sr-only">导航</SheetTitle>
+          <SidebarNav onNavigate={() => setOpen(false)} />
+        </SheetContent>
+      </Sheet>
+      <div className="flex items-center gap-2">
+        <img src="/favicon.svg" alt="Logoman" className="size-6 object-contain" />
+        <span className="text-sm font-semibold">Logoman</span>
+      </div>
+    </header>
+  );
+};
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -167,19 +248,14 @@ export default function App() {
     <LogoBotRuntimeProvider>
       {/* 两栏布局：左侧边栏 + 右侧对话区 */}
       <div className="bg-background flex h-dvh overflow-hidden">
-        {/* 侧边栏 */}
-        <aside className="bg-sidebar text-sidebar-foreground flex w-56 shrink-0 flex-col border-r border-sidebar-border px-2 py-3">
-          {/* Logo */}
-          <div className="mb-3 flex items-center gap-2 px-2.5">
-            <img src="/favicon.svg" alt="Logoman" className="size-6 object-contain" />
-            <span className="text-sm font-semibold">Logoman</span>
-          </div>
-          {/* 线程列表 */}
-          <ThreadList />
+        {/* 桌面侧边栏（移动端隐藏） */}
+        <aside className="bg-sidebar text-sidebar-foreground hidden w-56 shrink-0 flex-col border-r border-sidebar-border px-2 py-3 md:flex">
+          <SidebarNav />
         </aside>
 
         {/* 主内容区 */}
         <main className="flex flex-1 flex-col overflow-hidden">
+          <MobileTopBar />
           <Thread components={{ Welcome: LogoBotWelcome }} />
         </main>
       </div>

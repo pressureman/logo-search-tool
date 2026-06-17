@@ -2,6 +2,9 @@
   "name": "logo-bot",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "cd client && npm ci && npm run build",
     "start": "node index.js",

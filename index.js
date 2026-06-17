@@ -93,6 +93,26 @@ async function callDeepSeek(params, retries = 2, delayMs = 2000) {
   }
 }
 
+// ─── 错误描述：异常 → 用户友好提示 + 可追查的原始信息 ─────────────────────────
+function describeError(err) {
+  const status = err?.status ?? err?.response?.status ?? null;
+  const msg = err?.message ? String(err.message) : String(err);
+  const code = status ?? err?.code ?? null;
+  const detail = [code, msg].filter(Boolean).join(' ').trim() || '未知错误';
+
+  let friendly;
+  if (status === 429) friendly = 'AI 服务繁忙，请过一会儿再试~';
+  else if (status === 502 || status === 503) friendly = 'AI 服务暂时不可用，请稍后再试~';
+  else if (status === 401 || status === 403) friendly = 'AI 服务认证失败，请联系管理员检查配置';
+  else if (/logo 文件不存在/.test(msg)) friendly = '没找到对应的 logo 文件，换个说法再试试~';
+  else if (/下载失败/.test(msg)) friendly = '下载在线 logo 失败，请稍后再试~';
+  else if (/上传失败/.test(msg)) friendly = '文件上传失败，请稍后再试~';
+  else if (err?.code === 'ETIMEDOUT' || err?.code === 'ECONNRESET' || /timeout/i.test(msg)) friendly = '请求超时了，请稍后再试~';
+  else friendly = '处理请求时出了点问题，请稍后再试~';
+
+  return { friendly, detail };
+}
+
 // ─── 本地 Logo 意图解析 ────────────────────────────────────────────────────────
 
 async function parseIntent(userMessage, context = null, history = []) {
@@ -298,11 +318,16 @@ slugs 最多3个，从最可能到最不可能排序。例如"微信logo"→{"br
 
 const SI_BASE = 'https://cdn.jsdelivr.net/npm/simple-icons@latest/icons';
 
+// 给外部请求加超时，避免慢响应拖垮整个 /chat 请求（导致客户端 Failed to fetch）
+function fetchWithTimeout(url, opts = {}, ms = 8000) {
+  return fetch(url, { ...opts, signal: AbortSignal.timeout(ms) });
+}
+
 async function checkSimpleIconsSlugs(slugs) {
   const results = await Promise.all(
     slugs.map(async slug => {
       try {
-        const res = await fetch(`${SI_BASE}/${slug}.svg`, { method: 'HEAD' });
+        const res = await fetchWithTimeout(`${SI_BASE}/${slug}.svg`, { method: 'HEAD' }, 5000);
         return res.ok ? slug : null;
       } catch {
         return null;
@@ -315,7 +340,7 @@ async function checkSimpleIconsSlugs(slugs) {
 async function searchWikimedia(brandName) {
   try {
     const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(brandName + ' logo')}&srnamespace=6&srlimit=10&format=json&origin=*`;
-    const res = await fetch(searchUrl);
+    const res = await fetchWithTimeout(searchUrl, {}, 5000);
     const data = await res.json();
     const files = (data?.query?.search ?? []).map(r => r.title);
     if (!files.length) return [];
@@ -342,7 +367,7 @@ ${files.join('\n')}
 async function getWikimediaFileUrl(title) {
   try {
     const url = `https://commons.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url|mime&format=json&origin=*`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, {}, 5000);
     const data = await res.json();
     const pages = Object.values(data?.query?.pages ?? {});
     const info = pages[0]?.imageinfo?.[0];
@@ -383,7 +408,7 @@ function analyzeOnlineSvg(svgText, source) {
 }
 
 async function downloadAndAnalyze(candidate) {
-  const res = await fetch(candidate.svgUrl);
+  const res = await fetchWithTimeout(candidate.svgUrl, {}, 10000);
   if (!res.ok) throw new Error(`下载失败: ${res.status}`);
   const arrayBuffer = await res.arrayBuffer();
   const fileBuffer = Buffer.from(arrayBuffer);
@@ -456,19 +481,25 @@ async function processOnlineLogo(selected, intent) {
   }
 }
 
-async function parseOnlineOptions(userText, selected, intent) {
+async function parseOnlineOptions(userText, selected, intent, history = []) {
+  const historyMessages = history
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: String(m.content) }));
   const res = await callDeepSeek({
     model: 'deepseek-v4-flash',
     response_format: { type: 'json_object' },
     max_tokens: 150,
-    messages: [{
+    messages: [...historyMessages, {
       role: 'user',
-      content: `用户正在确认在线logo的输出参数。${selected.colorEditable ? '支持改色。' : '不支持改色。'}${selected.maxSize ? `最大尺寸${selected.maxSize}px。` : ''}
+      content: `你在帮用户确认刚找到的「${selected.slug}」这个 logo 的输出参数。${selected.colorEditable ? '支持改色。' : '不支持改色。'}${selected.maxSize ? `最大尺寸${selected.maxSize}px。` : ''}
 用户说：「${userText}」
-返回JSON，只返回JSON：{"action": "confirm|cancel", "color": "#RRGGBB或null", "size": 数字或null, "format": "png|jpg|webp|svg或null"}
-- action=confirm：用户接受（包括"好""发吧""默认就行"等）
-- action=cancel：用户取消
-- color：${selected.colorEditable ? '用户提到颜色时，能转换为 hex 就填 hex（如"蓝色"→"#0066FF"），不能转换就原样填用户说的颜色词（如"黄绿色"→"黄绿色"）；用户没有提到颜色才填 null' : '固定null'}
+返回JSON，只返回JSON：{"action": "confirm|adjust|cancel|unclear|new_request", "color": "#RRGGBB或null", "size": 数字或null, "format": "png|jpg|webp|svg或null"}
+- confirm：用户接受当前/默认方案（如"好""发吧""默认就行""可以""嗯""行"等）
+- adjust：用户在指定输出参数——颜色、尺寸或格式（如"红色""大一点""512""改成svg""要png""原色"等）
+- cancel：【仅】用户明确表示不要了/取消时才用（如"不要了""算了""取消""不用了"等明确否定词）
+- new_request：用户说的是跟「${selected.slug}」无关的【另一个东西】，比如另一个品牌名、另一个logo请求（如"微信""给我谷歌的logo"）
+- unclear：看不懂用户想干嘛，既不像确认/调参，也不像明确取消或新请求
+- color：${selected.colorEditable ? '用户提到颜色时，能转换为 hex 就填 hex（如"蓝色"→"#0066FF"），不能转换就原样填用户说的颜色词（如"黄绿色"→"黄绿色"）；没提到颜色填 null' : '固定null'}
 - size：用户明确指定了尺寸才填数字${selected.maxSize ? `（不超过${selected.maxSize}）` : ''}，否则填 null
 - format：用户明确指定了格式才填，否则填 null`,
     }],
@@ -481,7 +512,8 @@ async function parseOnlineOptions(userText, selected, intent) {
     console.log('[online_options] parsed:', JSON.stringify(parsed));
     return parsed;
   } catch {
-    return { action: 'confirm', color: null, _rawColor: null, size: intent.size || 512, format: intent.format || 'png' };
+    // 解析失败时回 unclear（更安全：不会在看不懂时乱发图）
+    return { action: 'unclear', color: null, _rawColor: null, size: null, format: null };
   }
 }
 
@@ -757,7 +789,7 @@ app.post('/webhook', async (req, res) => {
   const chatId = event.message.chat_id;
 
   try {
-    const state = pending.get(chatId);
+    let state = pending.get(chatId);
 
     // ── 双色配置确认 ──
     if (state?.type === 'color_parts_confirm') {
@@ -813,33 +845,41 @@ app.post('/webhook', async (req, res) => {
     if (state?.type === 'online_options') {
       const options = await parseOnlineOptions(userText, state.selected, state.intent);
 
-      if (options.action === 'cancel') {
+      // 用户其实是在提一个无关的新请求 → 清掉旧状态，落到下面的 parseIntent 重新路由
+      if (options.action === 'new_request') {
+        pending.delete(chatId);
+        state = null;
+      } else if (options.action === 'cancel') {
         pending.delete(chatId);
         const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
         await replyText(chatId, reply);
         return;
-      }
-
-      // 用户指定了颜色但无法识别（不是合法 hex 且不在颜色名映射表中）
-      if (state.selected.colorEditable && options._rawColor && !options.color) {
+      } else if (options.action === 'unclear') {
+        const reply = await generateReply(
+          `你是logo素材助手，刚找到了"${state.selected.slug}"的logo，正在等用户确认。用户这句没太看懂。自然地再问一次：是要指定颜色/尺寸/格式，还是直接按默认发？也可以说不要了。语气随意，一句话。`
+        );
+        await replyText(chatId, reply);
+        return; // 保留 pending 状态
+      } else if (state.selected.colorEditable && options._rawColor && !options.color) {
+        // 用户指定了颜色但无法识别（不是合法 hex 且不在颜色名映射表中）
         const reply = await generateReply(
           `你是logo素材助手，用户想把logo改成"${options._rawColor}"这个颜色，但我没法识别这个颜色名称。用自然语言告知，请用户提供十六进制色号（比如 #FF0000），语气随意，一句话就够。`
         );
         await replyText(chatId, reply);
         return; // 保留 pending 状态，等用户重新输入
+      } else {
+        pending.delete(chatId);
+        const finalIntent = {
+          ...state.intent,
+          color: options.color ?? state.intent.color,
+          size: options.size || state.intent.size || 512,
+          format: options.format || state.intent.format || 'png',
+        };
+        const fileResult = await processOnlineLogo(state.selected, finalIntent);
+        const safeId = state.selected.slug.replace(/[^a-zA-Z0-9\-_]/g, '_');
+        await sendLogoToFeishu(chatId, fileResult, safeId);
+        return;
       }
-
-      pending.delete(chatId);
-      const finalIntent = {
-        ...state.intent,
-        color: options.color ?? state.intent.color,
-        size: options.size || state.intent.size || 512,
-        format: options.format || state.intent.format || 'png',
-      };
-      const fileResult = await processOnlineLogo(state.selected, finalIntent);
-      const safeId = state.selected.slug.replace(/[^a-zA-Z0-9\-_]/g, '_');
-      await sendLogoToFeishu(chatId, fileResult, safeId);
-      return;
     }
 
     // ── 构造本地上下文 ──
@@ -1097,7 +1137,7 @@ app.post('/chat', async (req, res) => {
   const responses = [];
 
   try {
-    const state = pending.get(sessionId);
+    let state = pending.get(sessionId);
 
     // ── 双色配置确认 ──
     if (state?.type === 'color_parts_confirm') {
@@ -1151,34 +1191,44 @@ app.post('/chat', async (req, res) => {
 
     // ── 在线搜索：用户确认参数选项 ──
     if (state?.type === 'online_options') {
-      const options = await parseOnlineOptions(message, state.selected, state.intent);
+      const options = await parseOnlineOptions(message, state.selected, state.intent, history);
 
-      if (options.action === 'cancel') {
+      // 用户其实是在提一个无关的新请求 → 清掉旧状态，落到下面的 parseIntent 重新路由
+      if (options.action === 'new_request') {
+        pending.delete(sessionId);
+        state = null;
+      } else if (options.action === 'cancel') {
         pending.delete(sessionId);
         const reply = await generateReply(`你是logo素材助手，用户取消了logo请求。用轻松随意的一句话告别。`);
         responses.push({ type: 'text', data: reply });
         return res.json(responses);
-      }
-
-      if (state.selected.colorEditable && options._rawColor && !options.color) {
+      } else if (options.action === 'unclear') {
+        // 没听懂 → 再问一次，保留 pending，不要误判成取消
+        const reply = await generateReply(
+          `你是logo素材助手，刚找到了"${state.selected.slug}"的logo，正在等用户确认。用户这句没太看懂。自然地再问一次：是要指定颜色/尺寸/格式，还是直接按默认发？也可以说不要了。语气随意，一句话。`
+        );
+        responses.push({ type: 'text', data: reply });
+        return res.json(responses);
+      } else if (state.selected.colorEditable && options._rawColor && !options.color) {
         const reply = await generateReply(
           `你是logo素材助手，用户想把logo改成"${options._rawColor}"这个颜色，但我没法识别这个颜色名称。用自然语言告知，请用户提供十六进制色号（比如 #FF0000），语气随意，一句话就够。`
         );
         responses.push({ type: 'text', data: reply });
         return res.json(responses);
+      } else {
+        // confirm | adjust → 出图
+        pending.delete(sessionId);
+        const sourceLabel = state.selected.source === 'simpleicons' ? 'Simple Icons' : 'Wikimedia Commons';
+        const finalIntent = {
+          ...state.intent,
+          color: options.color ?? state.intent.color,
+          size: options.size || state.intent.size || 512,
+          format: options.format || state.intent.format || 'png',
+        };
+        const fileResult = await processOnlineLogo(state.selected, finalIntent);
+        responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${state.selected.slug}.${fileResult.ext}`, source: sourceLabel });
+        return res.json(responses);
       }
-
-      pending.delete(sessionId);
-      const sourceLabel = state.selected.source === 'simpleicons' ? 'Simple Icons' : 'Wikimedia Commons';
-      const finalIntent = {
-        ...state.intent,
-        color: options.color ?? state.intent.color,
-        size: options.size || state.intent.size || 512,
-        format: options.format || state.intent.format || 'png',
-      };
-      const fileResult = await processOnlineLogo(state.selected, finalIntent);
-      responses.push({ type: 'image', data: fileResult.buffer.toString('base64'), ext: fileResult.ext, name: `${state.selected.slug}.${fileResult.ext}`, source: sourceLabel });
-      return res.json(responses);
     }
 
     // ── 构造本地上下文 ──
@@ -1289,7 +1339,8 @@ app.post('/chat', async (req, res) => {
   } catch (err) {
     console.error('[/chat]', err);
     pending.delete(sessionId);
-    return res.json([{ type: 'text', data: '出了点问题，稍后再试试吧~' }]);
+    const { friendly, detail } = describeError(err);
+    return res.status(500).json({ error: friendly, detail });
   }
 });
 
