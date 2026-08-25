@@ -75,17 +75,41 @@
       "tags": ["客户"]
     },
     {
-      "id": "huirong",
-      "path": "客户/惠融科技.svg",
-      "aliases": ["惠融科技", "惠融", "huirong"],
-      "colorEditable": false,
-      "tags": ["客户"]
-    },
-    {
       "id": "huida",
       "path": "客户/惠达科技.svg",
       "aliases": ["惠达科技", "惠达", "huida"],
       "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "xiaomi-horizontal",
+      "path": "客户/Xiaomi_logo_horizontal.svg",
+      "aliases": ["小米", "小米横版", "小米logo", "Xiaomi", "Xiaomi横版", "Xiaomi logo"],
+      "colorEditable": false,
+      "tags": ["客户"]
+    },
+    {
+      "id": "insta360",
+      "path": "客户/影石Insta360.svg",
+      "aliases": ["影石", "影石创新", "影石Insta360", "Insta360", "insta 360"],
+      "colorEditable": true,
+      "colorNodes": ["black"],
+      "tags": ["客户"]
+    },
+    {
+      "id": "hengli",
+      "path": "客户/恒立.svg",
+      "aliases": ["恒立", "恒立液压", "Hengli", "Hengli Hydraulic"],
+      "colorEditable": true,
+      "colorNodes": ["#00479D"],
+      "tags": ["客户"]
+    },
+    {
+      "id": "zeiss",
+      "path": "客户/蔡司 ZEISS.svg",
+      "aliases": ["蔡司", "蔡司光学", "ZEISS", "Zeiss", "Carl Zeiss"],
+      "colorEditable": true,
+      "colorNodes": ["#0100BE"],
       "tags": ["客户"]
     },
     {

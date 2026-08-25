@@ -64,6 +64,30 @@ function extractJSON(content) {
   return null;
 }
 
+// AI 偶尔会漏掉本地品牌。对唯一别名做一次确定性兜底，避免误走在线搜索。
+function findUniqueLocalLogoByAlias(userMessage) {
+  const normalizedMessage = String(userMessage)
+    .toLowerCase()
+    .replace(/[\s_\-—·.,，。!！?？'"“”‘’/\\]+/g, '');
+
+  const matches = [];
+  for (const logo of manifest.logos) {
+    for (const alias of logo.aliases) {
+      const normalizedAlias = String(alias)
+        .toLowerCase()
+        .replace(/[\s_\-—·.,，。!！?？'"“”‘’/\\]+/g, '');
+      if (normalizedAlias.length >= 2 && normalizedMessage.includes(normalizedAlias)) {
+        matches.push({ logo, length: normalizedAlias.length });
+      }
+    }
+  }
+
+  if (!matches.length) return null;
+  const longest = Math.max(...matches.map(match => match.length));
+  const ids = [...new Set(matches.filter(match => match.length === longest).map(match => match.logo.id))];
+  return ids.length === 1 ? manifest.logos.find(logo => logo.id === ids[0]) : null;
+}
+
 // ─── DeepSeek 调用封装（503/429 自动重试）─────────────────────────────────────
 async function callDeepSeek(params, retries = 2, delayMs = 2000) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -222,6 +246,13 @@ ${logoList}${aliasNote}
   }
   parsed.color = resolveColor(parsed.color);
   parsed.iconColor = resolveColor(parsed.iconColor);
+  if (parsed.action === 'request' && !parsed.logoId && !(parsed.candidates?.length)) {
+    const localLogo = findUniqueLocalLogoByAlias(userMessage);
+    if (localLogo) {
+      parsed.logoId = localLogo.id;
+      parsed.brandHint = '';
+    }
+  }
   console.log('intent:', JSON.stringify(parsed));
   return parsed;
 }
